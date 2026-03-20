@@ -1,0 +1,29 @@
+# channels.yaml — Session processing configuration
+# Place this file in each session folder next to the exported CSV.
+# The dump converter (and future pcap/packet reshaping tools) read this
+# to know which CSV to load and how to interpret each channel.
+
+csv: "Session 1.csv"       # pre-decoded Saleae Logic export — this is the input
+
+channels:
+
+  - name: "mainboardGrey"
+    comment: "CN1grey wire - to mainboard - rxd pin"
+    circuitBoard: "display"
+
+  - name: "mainboardBlue"
+    comment: "CN1 blue wire - to mainboard - txd pin"
+    circuitBoard: "display"
+
+
+  - name: "bidirectionalExtensionBoard"
+    comment: "CN1 extension board bidirectional bus - r/t pin"
+    circuitBoard: "display"
+
+  - name: "wifiBrown"
+    comment: "CN3 brown wire — rx wifi module"
+    circuitBoard: "display"
+
+  - name: "wifiOrange"
+    comment: "orange wire — tx wifi module"
+    circuitBoard: "display"

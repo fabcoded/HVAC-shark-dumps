@@ -1,0 +1,5 @@
+.claude
+.vscode
+
+# Saleae Logic Analyzer session files (binary, can be large)
+*.sal
