@@ -3,3 +3,9 @@
 
 # Saleae Logic Analyzer session files (binary, can be large)
 *.sal
+
+
+__pychache__/
+*.pyc
+*.pyo
+*.pyd

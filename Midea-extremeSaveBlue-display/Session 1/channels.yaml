@@ -10,20 +10,24 @@ channels:
   - name: "mainboardGrey"
     comment: "CN1grey wire - to mainboard - rxd pin"
     circuitBoard: "display"
+    busType: "disp-mainboard_1"
 
   - name: "mainboardBlue"
     comment: "CN1 blue wire - to mainboard - txd pin"
     circuitBoard: "display"
-
+    busType: "disp-mainboard_1"
 
   - name: "bidirectionalExtensionBoard"
     comment: "CN1 extension board bidirectional bus - r/t pin"
     circuitBoard: "display"
+    busType: "r-t_1"
 
   - name: "wifiBrown"
     comment: "CN3 brown wire — rx wifi module"
     circuitBoard: "display"
+    busType: "uart"
 
   - name: "wifiOrange"
     comment: "orange wire — tx wifi module"
     circuitBoard: "display"
+    busType: "uart"

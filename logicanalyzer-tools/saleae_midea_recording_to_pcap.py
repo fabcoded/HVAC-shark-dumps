@@ -18,7 +18,7 @@ HVAC_shark v2 header layout:
   Offset  Size  Field
   0       10    Magic "HVAC_shark"
   10      1     Manufacturer (0x01 = Midea)
-  11      1     Bus type     (0x00 = XYE)
+  11      1     Bus type     (0x00=XYE, 0x01=UART, 0x02=disp-mainboard_1, 0x03=r-t_1)
   12      1     Version      (0x00 = legacy, 0x01 = extended)
   --- extended fields (version 0x01) ---
   13      1     logicChannel name length (N)
@@ -43,8 +43,14 @@ VALID_START_BYTES  = {0xAA, 0x55}
 
 HVAC_SHARK_MAGIC   = b"HVAC_shark"
 MANUFACTURER_MIDEA = 0x01
-BUS_TYPE_XYE       = 0x00
 HEADER_VERSION_V1  = 0x01
+
+BUS_TYPE_MAP = {
+    "xye":              0x00,
+    "uart":             0x01,
+    "disp-mainboard_1": 0x02,
+    "r-t_1":            0x03,
+}
 
 PCAP_MAGIC         = 0xA1B2C3D4
 LINKTYPE_ETHERNET  = 1
@@ -170,15 +176,17 @@ def _flush(packets: list, recs: list[dict], channel: str,
 
 # ── HVAC_shark v2 header builder ─────────────────────────────────────────────
 
-def build_hvac_shark_payload(xye_bytes: list[int],
+def build_hvac_shark_payload(raw_bytes: list[int],
                              channel_name: str = "",
                              circuit_board: str = "",
-                             comment: str = "") -> bytes:
-    """Build HVAC_shark payload: v2 header + XYE protocol data."""
+                             comment: str = "",
+                             bus_type: str = "xye") -> bytes:
+    """Build HVAC_shark payload: v2 header + protocol data."""
+    bus_code = BUS_TYPE_MAP.get(bus_type, 0xFF)
     buf = bytearray()
     buf += HVAC_SHARK_MAGIC                                  # 10 B
     buf += struct.pack("B", MANUFACTURER_MIDEA)              #  1 B
-    buf += struct.pack("B", BUS_TYPE_XYE)                    #  1 B
+    buf += struct.pack("B", bus_code)                        #  1 B
     buf += struct.pack("B", HEADER_VERSION_V1)               #  1 B  (version=1)
 
     for field in (channel_name, circuit_board, comment):
@@ -186,7 +194,7 @@ def build_hvac_shark_payload(xye_bytes: list[int],
         buf += struct.pack("B", len(encoded))
         buf += encoded
 
-    buf += bytes(xye_bytes)
+    buf += bytes(raw_bytes)
     return bytes(buf)
 
 
@@ -240,11 +248,12 @@ def write_pcap(filepath: str, packets: list[dict],
         for pkt in packets:
             ch = pkt["channel"]
             meta = channel_meta.get(ch, {})
-            board   = meta.get("circuitBoard", "")
-            comment = meta.get("comment", "")
+            board    = meta.get("circuitBoard", "")
+            comment  = meta.get("comment", "")
+            bus_type = meta.get("busType", "xye")
 
             hvac_payload = build_hvac_shark_payload(
-                pkt["raw_bytes"], ch, board, comment)
+                pkt["raw_bytes"], ch, board, comment, bus_type)
 
             src_port = (channel_names.index(ch) + 1) if ch in channel_names else 0
             frame = _build_frame(hvac_payload, src_port)
