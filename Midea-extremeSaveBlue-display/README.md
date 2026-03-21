@@ -1,0 +1,80 @@
+# Midea extremeSaveBlue — Display Board Captures
+
+Capture sessions from the display board of a **Midea extremeSaveBlue** split unit.
+Logic analyser probes are attached to the display board's internal buses.
+
+## Analysis policy — best effort, controversies explicit
+
+All protocol analysis in this repository is best-effort, derived from captures,
+open-source reference implementations, and community notes. No official Midea
+specification is available.
+
+**Every claim must carry a confidence label:**
+
+| Label           | Meaning                                                                |
+|-----------------|------------------------------------------------------------------------|
+| **Confirmed**   | Multiple independent data points or hardware-verified                  |
+| **Consistent**  | Own captures agree with at least one external source                   |
+| **Hypothesis**  | Own captures only, not independently verified                          |
+| **Disputed**    | Sources or captures contradict each other — conflict stated explicitly |
+| **Unknown**     | Insufficient data                                                      |
+
+When external sources (IRremoteESP8266, ESPHome, community posts) conflict with
+own captures, **both interpretations are documented**, not resolved by assumption.
+A discrepancy is only closed after a dedicated capture session that was designed
+to test it.
+
+---
+
+## Hardware
+
+- **Unit**: Midea extremeSaveBlue (split A/C)
+- **Capture point**: Display board (CN1, CN3, IR receiver)
+- **Analyser**: Saleae Logic
+
+## Buses captured
+
+| Bus            | Connector | Direction      | Protocol          |
+|----------------|-----------|----------------|-------------------|
+| R/T ext. board | CN1       | Bidirectional  | HA/HB framing, UART-compatible body commands |
+| Wi-Fi module   | CN3       | Bidirectional  | Midea UART (SmartKey) |
+| IR receiver    | —         | Receive only   | Midea IR (NEC-like, 48-bit frames) |
+
+## Session file conventions
+
+Each session folder contains:
+
+| File              | Contents                                                         |
+|-------------------|------------------------------------------------------------------|
+| `SessionNotes.md` | Operator log — initial state, sequence of actions, frame timestamps. Ground truth for correlating frames to known actions. |
+| `findings.md`     | Analysis output — field encoding tables, confidence levels, open questions, conclusions. |
+| `channels.yaml`   | Channel configuration for the pcap converter (bus types, CSV mapping). |
+| `Session N.csv`   | Pre-decoded Saleae Logic export (input to converter).            |
+| `session.pcap`    | Converted pcap, loadable in Wireshark with the HVAC-shark dissector. |
+
+## Sessions
+
+### Session 1
+
+**Key finding**: The R/T extension board bus (CN1) carries UART-compatible body
+commands over HA/HB framing — establishing the link between the R/T pin and the
+Midea UART protocol on this hardware platform.
+
+Buses captured: R/T extension board, Wi-Fi module (UART).
+No IR capture. No `SessionNotes.md` (operator actions were not logged for this session).
+
+- [findings.md](Session%201/findings.md)
+- [channels.yaml](Session%201/channels.yaml)
+
+### Session 2
+
+**Key finding**: First IR decode. The Midea remote uses a NEC-like 48-bit IR protocol
+with three frame types: `0xB2` (AC control), `0xB9` (installer/setter mode), `0xD5`
+(follow-up). Temperature encoding confirmed for 22, 24, 26 deg C. Several fields
+remain open (byte[2] mode/fan bits, bit4 swing identity).
+
+Buses captured: R/T extension board, Wi-Fi module (UART), IR receiver (raw).
+
+- [SessionNotes.md](Session%202/SessionNotes.md)
+- [findings.md](Session%202/findings.md)
+- [channels.yaml](Session%202/channels.yaml)

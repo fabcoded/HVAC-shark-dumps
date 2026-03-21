@@ -1,5 +1,15 @@
 # Session 1 — Findings
 
+## Session context
+
+First capture session on the Midea extremeSaveBlue display board.
+Key discovery: the **R/T extension board bus (CN1) carries UART-compatible commands**
+over HA/HB framing. The body command set (`0xC0`, `0xC1`, `0x41`, `0x93`) is identical
+to the Midea UART protocol, establishing the link between the R/T pin and the UART
+protocol on this hardware platform.
+
+---
+
 ## UART Sync Byte (byte[3]) is always 0x00
 
 The PI HVAC databridge protocol spec defines byte[3] of the UART frame as a

@@ -18,7 +18,7 @@ HVAC_shark v2 header layout:
   Offset  Size  Field
   0       10    Magic "HVAC_shark"
   10      1     Manufacturer (0x01 = Midea)
-  11      1     Bus type     (0x00=XYE, 0x01=UART, 0x02=disp-mainboard_1, 0x03=r-t_1)
+  11      1     Bus type     (0x00=XYE, 0x01=UART, 0x02=disp-mainboard_1, 0x03=r-t_1, 0x04=ir_raw)
   12      1     Version      (0x00 = legacy, 0x01 = extended)
   --- extended fields (version 0x01) ---
   13      1     logicChannel name length (N)
@@ -50,6 +50,7 @@ BUS_TYPE_MAP = {
     "uart":             0x01,
     "disp-mainboard_1": 0x02,
     "r-t_1":            0x03,
+    "ir_raw":           0x04,
 }
 
 PCAP_MAGIC         = 0xA1B2C3D4
@@ -172,6 +173,144 @@ def _flush(packets: list, recs: list[dict], channel: str,
         "start_byte":      f"0x{start_byte:02X}",
         "valid_start":     start_byte in VALID_START_BYTES,
     })
+
+
+# ── IR raw pulse-width decoder ───────────────────────────────────────────────
+
+# Timing thresholds (seconds) for Midea-style NEC IR encoding
+IR_HEADER_MARK_MIN  = 0.003    # header mark  >3 ms
+IR_HEADER_SPACE_MIN = 0.003    # header space >3 ms
+IR_BIT_SPACE_THRESH = 0.001    # space >1 ms → bit 1, else bit 0
+IR_BITS_PER_FRAME   = 48       # 6 bytes per frame
+
+
+def load_ir_raw(path: str, channel_name: str) -> list[tuple[float, int]]:
+    """Load a raw timing CSV (Time [s], <channel>) into (timestamp, level) tuples."""
+    transitions: list[tuple[float, int]] = []
+    with open(path, newline="") as f:
+        reader = csvmod.DictReader(f)
+        for row in reader:
+            transitions.append((float(row["Time [s]"]), int(row[channel_name])))
+    return transitions
+
+
+def decode_ir_frames(transitions: list[tuple[float, int]],
+                     channel_name: str) -> list[dict]:
+    """Decode NEC-like IR frames from raw signal transitions.
+
+    Active-low convention (TSOP receiver): 0 = mark (IR burst), 1 = space (idle).
+    Each frame: ~4.4 ms header mark + ~4.4 ms header space + 48 data bits + stop mark.
+    """
+    packets: list[dict] = []
+    i = 0
+    n = len(transitions)
+
+    while i < n - 4:
+        # Look for header: transition to 0 (mark start)
+        if transitions[i][1] != 0:
+            i += 1
+            continue
+
+        # Header mark duration
+        if transitions[i + 1][1] != 1:
+            i += 1
+            continue
+        mark_dur = transitions[i + 1][0] - transitions[i][0]
+        if mark_dur < IR_HEADER_MARK_MIN:
+            i += 1
+            continue
+
+        # Header space duration
+        if transitions[i + 2][1] != 0:
+            i += 2
+            continue
+        space_dur = transitions[i + 2][0] - transitions[i + 1][0]
+        if space_dur < IR_HEADER_SPACE_MIN:
+            i += 2
+            continue
+
+        # Decode data bits
+        frame_start_time = transitions[i][0]
+        bits: list[int] = []
+        j = i + 2  # points to first data-bit mark start (level 0)
+
+        while j + 2 < n and len(bits) < IR_BITS_PER_FRAME:
+            if transitions[j][1] != 0:
+                break
+            # mark end → space start
+            space_start = transitions[j + 1][0]
+            # space end → next mark start (or end of frame)
+            next_mark = transitions[j + 2][0]
+            bit_space = next_mark - space_start
+            if bit_space > 0.005:  # too long → not a data bit
+                break
+            bits.append(1 if bit_space > IR_BIT_SPACE_THRESH else 0)
+            j += 2
+
+        if len(bits) == IR_BITS_PER_FRAME:
+            # Assemble bytes (MSB first)
+            raw_bytes: list[int] = []
+            for b in range(0, IR_BITS_PER_FRAME, 8):
+                val = 0
+                for k in range(8):
+                    val = (val << 1) | bits[b + k]
+                raw_bytes.append(val)
+
+            complement_ok = all(
+                raw_bytes[p] ^ raw_bytes[p + 1] == 0xFF
+                for p in range(0, 6, 2)
+            )
+
+            packets.append({
+                "channel":         channel_name,
+                "start_time":      frame_start_time,
+                "packet_len":      len(raw_bytes),
+                "raw_bytes":       raw_bytes,
+                "packet_content":  " ".join(f"{b:02X}" for b in raw_bytes),
+                "start_byte":      f"0x{raw_bytes[0]:02X}",
+                "valid_start":     complement_ok,
+            })
+
+        i = j  # advance past decoded (or failed) frame
+        continue
+
+    return packets
+
+
+def load_and_decode_ir_channels(config: dict,
+                                session_dir: Path) -> list[dict]:
+    """Find ir_raw channels in config, load their raw CSV, decode IR frames."""
+    raw_csv_name = config.get("RawCSV")
+    if not raw_csv_name:
+        return []
+
+    raw_csv_path = session_dir / raw_csv_name
+    if not raw_csv_path.exists():
+        print(f"[!] Raw CSV not found: {raw_csv_path}")
+        return []
+
+    ir_channels = [
+        ch for ch in config.get("channels", [])
+        if ch.get("busType") == "ir_raw" and ch.get("file") == "raw"
+    ]
+    if not ir_channels:
+        return []
+
+    all_packets: list[dict] = []
+    for ch in ir_channels:
+        name = ch.get("name", "")
+        if not name:
+            continue
+        print(f"[*] Decoding IR channel: {name} from {raw_csv_path.name}")
+        transitions = load_ir_raw(str(raw_csv_path), name)
+        print(f"    {len(transitions):,} transitions")
+        packets = decode_ir_frames(transitions, name)
+        complement_ok = sum(1 for p in packets if p["valid_start"])
+        print(f"    {len(packets)} IR frames decoded "
+              f"({complement_ok} complement-OK)")
+        all_packets.extend(packets)
+
+    return all_packets
 
 
 # ── HVAC_shark v2 header builder ─────────────────────────────────────────────
@@ -350,7 +489,7 @@ def main():
 
     is_pcap = args.pcap or str(out_path).endswith(".pcap")
 
-    # ── Process ──
+    # ── Process serial channels ──
     print(f"[*] Loading: {in_path}")
     records = load_dump(str(in_path))
     unique_channels = set(r["name"] for r in records)
@@ -359,6 +498,15 @@ def main():
     print(f"[*] Extracting packets (gap_multiplier={args.gap_multiplier})...")
     packets = extract_packets(records, args.gap_multiplier)
     _print_summary(packets)
+
+    # ── Process IR raw channels ──
+    if config_path.exists():
+        ir_packets = load_and_decode_ir_channels(config, session_dir)
+        if ir_packets:
+            packets.extend(ir_packets)
+            packets.sort(key=lambda p: p["start_time"])
+            print(f"[*] Merged {len(ir_packets)} IR frames -> "
+                  f"{len(packets)} total packets")
 
     if is_pcap:
         print(f"\n[*] Writing pcap: {out_path}")
