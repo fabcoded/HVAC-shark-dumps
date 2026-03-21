@@ -60,9 +60,10 @@ Each session folder contains:
 commands over HA/HB framing — establishing the link between the R/T pin and the
 Midea UART protocol on this hardware platform.
 
-Buses captured: R/T extension board, Wi-Fi module (UART).
-No IR capture. No `SessionNotes.md` (operator actions were not logged for this session).
+Buses captured: R/T extension board, Wi-Fi module (UART), mainboard UART (CN1 grey/blue).
+No IR capture. Passive observation session — no deliberate operator actions.
 
+- [SessionNotes.md](Session%201/SessionNotes.md)
 - [findings.md](Session%201/findings.md)
 - [channels.yaml](Session%201/channels.yaml)
 

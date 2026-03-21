@@ -79,6 +79,25 @@ The sync byte validation in the spec is not reliable for this device
 
 ## R/T Extension Board Bus (bidirectionalExtensionBoard)
 
+### Physical layer and pin identity
+
+The R/T pin is a **single-wire bidirectional half-duplex bus** on connector CN1 of
+the display board. "R/T" stands for Receive/Transmit — both directions share the
+same physical wire, multiplexed by direction (start byte distinguishes them).
+
+The wire runs from the display board to a converter PCB which bridges it onto the
+HA/HB differential bus toward the mainboard. The capture in this session probes
+the single-ended side (before the converter), identified in `channels.yaml` as
+channel `bidirectionalExtensionBoard`, busType `r-t_1`.
+
+CN1 also carries two separate unidirectional wires to the mainboard (grey = rxd,
+blue = txd, busType `disp-mainboard_1`), which are a different, direct UART path
+and not part of the R/T bus.
+
+Baud rate of the R/T bus: **[UNKNOWN — not measured in this session]**.
+The framing and timing are consistent with 9600 bps (same as the Wi-Fi UART port)
+but this has not been confirmed with a direct measurement.
+
 The CN1 extension board uses a bidirectional half-duplex bus. The data on this
 wire is converted to the HA/HB bus by a converter PCB, so the framing reflects
 the HA/HB bus protocol rather than direct UART. 179 packets total (91 requests,
