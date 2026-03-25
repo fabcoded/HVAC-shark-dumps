@@ -1,0 +1,51 @@
+# channels.yaml — Session processing configuration
+# Place this file in each session folder next to the exported CSV.
+# The dump converter (and future pcap/packet reshaping tools) read this
+# to know which CSV to load and how to interpret each channel.
+
+channels:
+
+  - name: "mainboardGrey"
+    csv: "Session 7.csv"
+    comment: "CN1grey wire - to mainboard - rxd pin"
+    circuitBoard: "display"
+    busType: "disp-mainboard_1"
+
+  - name: "mainboardBlue"
+    csv: "Session 7.csv"
+    comment: "CN1 blue wire - to mainboard - txd pin"
+    circuitBoard: "display"
+    busType: "disp-mainboard_1"
+
+  - name: "wifiBrown"
+    csv: "Session 7.csv"
+    comment: "CN3 brown wire — rx wifi module"
+    circuitBoard: "display"
+    busType: "uart"
+
+  - name: "wifiOrange"
+    csv: "Session 7.csv"
+    comment: "orange wire — tx wifi module"
+    circuitBoard: "display"
+    busType: "uart"
+
+  - name: "bidirectionalExtensionBoard"
+    csv: "Session 7.csv"       # pre-decoded Saleae Logic export — this is the input
+    comment: "CN1 extension board bidirectional bus - r/t pin"
+    circuitBoard: "display"
+    busType: "r-t_1"
+
+  - name: "Channel 6"
+    csv: Session 7.hahb.raw.csv
+    comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip"
+    circuitBoard: "display"
+    busType: "hahb_raw_chip"
+    channelframes: "sum"
+    subtract: true
+
+  - name: "Channel 7"
+    csv: Session 7.hahb.raw.csv
+    comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip. Data on this channel are MFB-X to diplay packets"
+    circuitBoard: "display"
+    busType: "hahb_raw_chip"
+    channelframes: "single"

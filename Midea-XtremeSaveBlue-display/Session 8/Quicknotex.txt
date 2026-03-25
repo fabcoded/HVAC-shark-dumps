@@ -1,0 +1,45 @@
+Shall be ai interpreted and moved to regular documentation like session 1-8
+
+TSoll 30 grad, mode auto
+
+Swing stands for air direction (lover up down)
+Wall remote:
+Swing horizontal (left-rigth) off->on->off
+Swing vertical (up/down) off->on->off
+
+
+App (uart stick)
+
+Swing horizontal (left-right) off->on->off
+Swing vertical (up-down) off->on->off
+
+swing vertical
+Swing highest 
+swing medium high
+swing medium
+swing lower
+swing lowest
+swing lower
+swing medium
+
+swing horizontal lef
+swing horizontal left/mid
+swing horizontal center
+swing horizontal right/mid
+swing horizontal right
+swing horziontal right/mid
+
+temp to 29deg
+
+mode change auto -> heat
+
+temp to 28 deg
+
+mode auto
+
+temp 16 deg
+temp 21 deg
+mode fan
+
+end
+
