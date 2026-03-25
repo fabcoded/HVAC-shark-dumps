@@ -3,33 +3,34 @@
 # The dump converter (and future pcap/packet reshaping tools) read this
 # to know which CSV to load and how to interpret each channel.
 
-csv: "Session 2.csv"       # pre-decoded Saleae Logic export — this is the input
-RawCSV: "Session 2.raw.csv"  # optional — the raw Saleae export, for reference
-
 channels:
 
   - name: "mainboardGrey"
+    csv: "Session 2.csv"
     comment: "CN1grey wire - to mainboard - rxd pin"
     circuitBoard: "display"
     busType: "disp-mainboard_1"
 
   - name: "mainboardBlue"
+    csv: "Session 2.csv"
     comment: "CN1 blue wire - to mainboard - txd pin"
     circuitBoard: "display"
     busType: "disp-mainboard_1"
 
   - name: "wifiBrown"
+    csv: "Session 2.csv"
     comment: "CN3 brown wire — rx wifi module"
     circuitBoard: "display"
     busType: "uart"
 
   - name: "wifiOrange"
+    csv: "Session 2.csv"
     comment: "orange wire — tx wifi module"
     circuitBoard: "display"
     busType: "uart"
 
   - name: "MideaIR"
+    csv: "Session 2.raw.csv"
     comment: "Raw IR signal from Midea remote control"
     circuitBoard: "display"
     busType: "ir_raw"
-    file: "raw"

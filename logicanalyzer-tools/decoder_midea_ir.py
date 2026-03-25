@@ -110,19 +110,14 @@ def decode_ir_frames(transitions: list[tuple[float, int]],
 
 
 def load_and_decode_ir_channels(config: dict, session_dir: Path) -> list[dict]:
-    """Find ir_raw channels in config, load their raw CSV, decode IR frames."""
-    raw_csv_name = config.get("RawCSV")
-    if not raw_csv_name:
-        return []
+    """Find ir_raw channels in config, load their raw CSV, decode IR frames.
 
-    raw_csv_path = session_dir / raw_csv_name
-    if not raw_csv_path.exists():
-        print(f"[!] Raw CSV not found: {raw_csv_path}")
-        return []
-
+    Each IR channel must have a 'csv' field pointing to the raw Saleae export
+    (Time [s] / level columns).
+    """
     ir_channels = [
         ch for ch in config.get("channels", [])
-        if ch.get("busType") == "ir_raw" and ch.get("file") == "raw"
+        if ch.get("busType") == "ir_raw"
     ]
     if not ir_channels:
         return []
@@ -132,6 +127,17 @@ def load_and_decode_ir_channels(config: dict, session_dir: Path) -> list[dict]:
         name = ch.get("name", "")
         if not name:
             continue
+
+        csv_name = ch.get("csv")
+        if not csv_name:
+            print(f"[!] IR channel '{name}' has no 'csv' field, skipping")
+            continue
+
+        raw_csv_path = session_dir / csv_name
+        if not raw_csv_path.exists():
+            print(f"[!] Raw CSV not found for IR channel '{name}': {raw_csv_path}")
+            continue
+
         print(f"[*] Decoding IR channel: {name} from {raw_csv_path.name}")
         transitions = load_ir_raw(str(raw_csv_path), name)
         print(f"    {len(transitions):,} transitions")

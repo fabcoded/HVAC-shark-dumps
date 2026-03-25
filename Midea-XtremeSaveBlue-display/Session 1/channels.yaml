@@ -3,31 +3,34 @@
 # The dump converter (and future pcap/packet reshaping tools) read this
 # to know which CSV to load and how to interpret each channel.
 
-csv: "Session 1.csv"       # pre-decoded Saleae Logic export — this is the input
-
 channels:
 
   - name: "mainboardGrey"
+    csv: "Session 1.csv"
     comment: "CN1grey wire - to mainboard - rxd pin"
     circuitBoard: "display"
     busType: "disp-mainboard_1"
 
   - name: "mainboardBlue"
+    csv: "Session 1.csv"
     comment: "CN1 blue wire - to mainboard - txd pin"
     circuitBoard: "display"
     busType: "disp-mainboard_1"
 
   - name: "bidirectionalExtensionBoard"
+    csv: "Session 1.csv"
     comment: "CN1 extension board bidirectional bus - r/t pin"
     circuitBoard: "display"
     busType: "r-t_1"
 
   - name: "wifiBrown"
+    csv: "Session 1.csv"
     comment: "CN3 brown wire — rx wifi module"
     circuitBoard: "display"
     busType: "uart"
 
   - name: "wifiOrange"
+    csv: "Session 1.csv"
     comment: "orange wire — tx wifi module"
     circuitBoard: "display"
     busType: "uart"

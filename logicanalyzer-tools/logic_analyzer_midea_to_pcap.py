@@ -336,15 +336,16 @@ Examples (HAHB mode):
     # ── Serial mode ────────────────────────────────────────────────────────────
     session_dir = Path(args.session_dir)
 
-    config_path   = Path(args.config) if args.config else session_dir / "channels.yaml"
-    channel_meta  = {}
-    csv_from_yaml = None
-    config: dict  = {}
+    config_path  = Path(args.config) if args.config else session_dir / "channels.yaml"
+    channel_meta = {}
+    config: dict = {}
+
+    # Bus types decoded from Saleae pre-decoded UART byte CSV
+    SERIAL_BUS_TYPES = {"xye", "uart", "disp-mainboard_1", "r-t_1"}
 
     if config_path.exists():
         print(f"[*] Config: {config_path}")
-        config        = _load_yaml(str(config_path))
-        csv_from_yaml = config.get("csv")
+        config = _load_yaml(str(config_path))
         for ch in config.get("channels", []):
             name = ch.get("name", "")
             if name:
@@ -353,13 +354,6 @@ Examples (HAHB mode):
             print(f"    {name}: {meta.get('comment', '')}")
     else:
         print(f"[*] No channels.yaml found at {config_path}, proceeding without metadata")
-
-    if args.input:
-        in_path = Path(args.input)
-    elif csv_from_yaml:
-        in_path = session_dir / csv_from_yaml
-    else:
-        in_path = session_dir / "logic-dump.csv"
 
     if args.output:
         out_path = Path(args.output)
@@ -370,8 +364,29 @@ Examples (HAHB mode):
 
     is_pcap = args.pcap or str(out_path).endswith(".pcap")
 
-    print(f"[*] Loading: {in_path}")
-    records         = load_dump(str(in_path))
+    # Collect unique CSV files from serial channels (per-channel csv field)
+    serial_csvs: list[str] = []
+    for ch in config.get("channels", []):
+        if ch.get("busType") in SERIAL_BUS_TYPES:
+            csv_name = ch.get("csv")
+            if csv_name and csv_name not in serial_csvs:
+                serial_csvs.append(csv_name)
+
+    if args.input:
+        print(f"[*] Loading: {args.input}")
+        records = load_dump(args.input)
+    elif serial_csvs:
+        records = []
+        for csv_name in serial_csvs:
+            p = session_dir / csv_name
+            print(f"[*] Loading: {p}")
+            records.extend(load_dump(str(p)))
+        records.sort(key=lambda r: r["start_time"])
+    else:
+        fallback = session_dir / "logic-dump.csv"
+        print(f"[*] Loading: {fallback}")
+        records = load_dump(str(fallback))
+
     unique_channels = set(r["name"] for r in records)
     print(f"    {len(records):,} bytes across {len(unique_channels)} channels")
 

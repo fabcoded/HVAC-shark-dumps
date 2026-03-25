@@ -2,45 +2,121 @@
 """
 HAHB decoder for Midea logic analyzer captures.
 
-Implements the independent two-track decoder strategy documented in
-decoder_strategy_hahb.md.  Each track is decoded using only its own
-sampled waveform; the other track is never accessed during decoding.
+Overview
+--------
+The HAHB (High-speed AC High-frequency Bus) is a proprietary Midea RS-485
+bus running at 48 000 baud.  It carries XYE-framed packets and is tapped
+directly at the RS-485 transceiver chip on the adapter board.  Because the
+bus is half-duplex, a two-channel capture (one probe per transceiver
+differential pair) yields both the combined bus signal and, optionally, a
+single-direction view; the decoder can process either one track or both
+independently.
 
-Bus parameters
---------------
-Baud rate : 48 000 baud  (TB ≈ 20.83 µs)
-Encoding  : nibble-pair Manchester-like encoding
-              physical bytes → logical bytes:
-              bits [0,2,4,6] of two consecutive physical bytes
-              are combined into one nibble-pair and XOR'd with 0xFF
-UART frame: 8N1
+Physical / encoding parameters
+--------------------------------
+  Baud rate  : 48 000 baud  (TB ≈ 20.83 µs per bit)
+  UART frame : 8N1 (1 start bit, 8 data bits, 1 stop bit = 10 bit-periods)
+  Line idle  : logic 1 (inverted in the decoder so idle = 0 for burst logic)
+  Encoding   : nibble-pair encoding
+                 Two consecutive physical UART bytes encode one logical byte.
+                 Bits [0, 2, 4, 6] are extracted from each physical byte,
+                 combined into a nibble pair, then XOR'd with 0xFF:
+                   na = phys_a bits [0,2,4,6]
+                   nb = phys_b bits [0,2,4,6]
+                   logical = (nb | (na << 4)) ^ 0xFF
 
-Decoder pipeline per track
---------------------------
-1. Edge extraction from raw digital waveform
-2. Burst detection  – idle > 3000 µs separates bursts
-3. Glitch-tolerant burst start – first stable edge ≥ 5 µs
-4. Phase search  – ±0.75 bit periods around burst start (31 steps)
-5. UART 8N1 decode of sampled bit stream
-6. Nibble-pair reconstruction  + XOR 0xFF
-7. Candidate scoring: CRC valid > longer frame > starts with 0xAA
+Decoder pipeline (per track, fully independent)
+------------------------------------------------
+Each track is decoded using only its own sampled waveform.  No information
+from the other track is accessed during decoding of a given track.
 
-Post-processing (two-track mode)
----------------------------------
-Slave frames that are exact duplicates of master frames (same logical
-bytes, timestamp within one UART byte time) are optionally removed,
-yielding a "slave-only" result.
+  Step 1 – Edge extraction
+    A compact edge list is built from transitions in the raw digital input.
+    Only transition timestamps are stored; the raw sample array is not kept
+    in memory during decoding.  This edge list is the sole timing source for
+    the track.
 
-Output
-------
-Standard packet dicts compatible with the HVAC_shark pcap writer:
+  Step 2 – Burst detection
+    The edge list is scanned for idle regions.  After signal inversion
+    (so that the idle state maps to logical 0), any gap longer than
+    IDLE_US = 3 000 µs is treated as a burst boundary.  Each contiguous
+    active segment is collected as a (t_start, t_end) burst.
+
+  Step 3 – Glitch-tolerant burst start
+    Within a burst, the decoder only starts sampling at the first edge
+    segment of at least MIN_EDGE_US = 5 µs.  Very short transitions at the
+    beginning of some bursts (glitches from bus arbitration or probe
+    coupling) are ignored.
+
+  Step 4 – Phase search
+    For each burst, 31 evenly spaced sampling phases are tested in the range
+    [-0.75 × TB, +0.75 × TB] µs around the burst start.  This compensates
+    for sub-bit start misalignment without using any cross-track information.
+    The signal is sampled by looking up the edge table at each bit centre.
+
+  Step 5 – UART 8N1 decoding
+    For each phase candidate, all 10 possible UART bit offsets (0–9) are
+    tested.  For each offset, the sampled bit stream is scanned for valid
+    8N1 frames: a 0 start bit followed by 8 data bits followed by a 1 stop
+    bit.  Each valid frame contributes one physical byte.
+
+  Step 6 – Logical byte reconstruction
+    For each UART decode result and each nibble-pair alignment offset
+    (0 or 1), the nibble-pair encoding is reversed to recover the logical
+    byte sequence.
+
+  Step 7 – Candidate scoring
+    All (phase, uart_off, nib_off) candidates for a burst are ranked by a
+    three-key score, evaluated using only local evidence from the same track:
+      1. CRC valid   — two's-complement checksum over logical[1..-2]
+                       matches logical[-1]   (highest priority)
+      2. Frame length — longer decoded frames preferred
+      3. Preamble    — logical[0] == 0xAA preferred
+
+    The highest-scoring candidate is kept as the burst's decoded frame.
+
+Post-processing – master/slave duplicate removal (two-track mode)
+-----------------------------------------------------------------
+After both tracks are decoded independently, slave frames that are exact
+duplicates of master frames can be removed.  A slave frame is considered a
+duplicate when:
+  - its decoded logical bytes are identical to a master frame, and
+  - its burst timestamp differs by no more than one UART byte time
+    (10 × TB ≈ 208 µs).
+
+This yields a "slave-only" result: frames that the slave sent but the
+master did not (or vice versa), which isolates one direction of traffic on
+the half-duplex bus.
+
+Internal frame dict fields (produced by _decode_track)
+-------------------------------------------------------
+  source      : track label passed by caller
+  burst_idx   : index of the burst within the track
+  timestamp_s : burst start time in seconds
+  phase_us    : winning sampling phase offset in µs
+  uart_off    : winning UART bit offset (0–9)
+  nib_off     : winning nibble-pair alignment offset (0 or 1)
+  cmd         : logical[1] as hex string (XYE command byte)
+  len         : number of logical bytes decoded
+  crc_ok      : True if CRC check passed
+  crc_calc    : expected CRC byte as hex string
+  frame_hex   : full logical frame as space-separated hex
+  _log        : logical byte list  (internal – not written to pcap)
+  _t_us       : burst start time in µs  (internal – used for deduplication)
+
+Output packet dicts (produced by _frames_to_packets / load_and_decode_hahb)
+----------------------------------------------------------------------------
+Standard dicts compatible with the HVAC_shark pcap writer:
   channel, start_time, packet_len, raw_bytes, packet_content,
   start_byte, valid_start
 
-Frames produced by the HAHB decoder carry bus type XYE in the pcap
-(set by the caller via channel_meta).
+HAHB frames carry bus type XYE in the HVAC_shark header (set by the caller
+via channel_meta when calling write_pcap).
 
-Dependencies: numpy  (pip install numpy)
+Dependencies
+------------
+  numpy   (pip install numpy)
+  pandas  (pip install pandas)  — used only in load_and_decode_hahb
 """
 
 import csv as csvmod
@@ -63,34 +139,30 @@ MIN_EDGE_US = 5.0                     # ignore glitch edges shorter than this
 def _decode_track(times_s: np.ndarray,
                   raw_signal: np.ndarray,
                   source_name: str) -> list[dict]:
-    """Decode one digital track independently.
+    """Run the full 7-step HAHB decode pipeline on one digital track.
 
-    Parameters
-    ----------
-    times_s     : sample timestamps in seconds
-    raw_signal  : digital levels (0 / 1), same length as times_s
-    source_name : label written into the 'source' field of each frame
+    The track is decoded using only its own waveform (no cross-track access).
+    See the module docstring for a detailed description of each step.
 
-    Returns
-    -------
-    List of frame dicts (including internal '_log' and '_t_us' keys used
-    for duplicate removal – stripped before pcap output).
+    Returns a list of frame dicts; fields prefixed with '_' are internal and
+    are stripped before pcap output.
     """
     raw_signal = raw_signal.astype(np.int8)
 
-    # Build edge list (index, timestamp_µs, level)
+    # Step 1 – Edge extraction: build compact (timestamp_µs, level) edge table.
     diff      = np.diff(raw_signal)
     edge_idx  = np.concatenate([[0], np.where(diff != 0)[0] + 1])
     edge_t_us = times_s[edge_idx] * 1e6
     edge_lvl  = raw_signal[edge_idx]
 
     def sig_at(t_us: float) -> int:
-        """Sample the signal at an arbitrary µs timestamp via edge table."""
+        """Look up signal level at t_us via binary search on the edge table."""
         i = int(np.searchsorted(edge_t_us, t_us, side="right")) - 1
         i = max(0, min(i, len(edge_lvl) - 1))
-        return 1 - int(edge_lvl[i])   # invert: wire idle = 1 → logical 1 idle
+        return 1 - int(edge_lvl[i])   # invert: wire idle=1 → logical idle=0
 
-    # ── Burst detection ────────────────────────────────────────────────────────
+    # Step 2 – Burst detection: idle > IDLE_US µs separates bursts.
+    # Step 3 – Glitch-tolerant start: first stable edge ≥ MIN_EDGE_US µs.
     bursts: list[tuple[float, float]] = []
     in_burst = False
     t0_burst = None
@@ -100,21 +172,20 @@ def _decode_track(times_s: np.ndarray,
         dur = edge_t_us[k + 1] - t
         lv  = 1 - int(edge_lvl[k])   # inverted logical level
 
-        if lv == 0 and dur > IDLE_US:
+        if lv == 0 and dur > IDLE_US:          # long idle → burst end
             if in_burst:
-                bursts.append((t0_burst, t))  # type: ignore[arg-type]
+                bursts.append((t0_burst, t))   # type: ignore[arg-type]
             in_burst = False
             t0_burst = None
-        elif not in_burst and dur >= MIN_EDGE_US:
+        elif not in_burst and dur >= MIN_EDGE_US:  # stable edge → burst start
             t0_burst = t
             in_burst = True
 
     if in_burst:
         bursts.append((t0_burst, edge_t_us[-1]))  # type: ignore[arg-type]
 
-    # ── UART decode helpers ────────────────────────────────────────────────────
+    # Step 5 helper – UART 8N1: scan bit stream for valid start+data+stop triples.
     def uart_decode(bits: list[int], uart_off: int) -> list[int]:
-        """Decode 8N1 bytes from a flat bit list starting at uart_off."""
         phys: list[int] = []
         i = uart_off
         while i + 9 < len(bits):
@@ -129,12 +200,9 @@ def _decode_track(times_s: np.ndarray,
             i += 10
         return phys
 
+    # Step 6 helper – Nibble-pair decode: bits [0,2,4,6] of each physical byte
+    # pair → one logical byte, XOR 0xFF.
     def nibble_decode(phys: list[int], nib_off: int) -> list[int]:
-        """Reconstruct logical bytes from physical byte pairs.
-
-        Each logical byte is formed from bits [0,2,4,6] of two consecutive
-        physical bytes, then XOR'd with 0xFF.
-        """
         src = phys[nib_off:]
         out: list[int] = []
         for i in range(0, len(src) - 1, 2):
@@ -154,12 +222,13 @@ def _decode_track(times_s: np.ndarray,
             out.append((nb | (na << 4)) ^ 0xFF)
         return out
 
-    # ── Per-burst phase search & scoring ──────────────────────────────────────
+    # Steps 4 + 5 + 6 + 7 – Phase search, UART decode, nibble decode, scoring.
     frames: list[dict] = []
 
     for bi, (t0, t1) in enumerate(bursts):
         best: dict | None = None
 
+        # Step 4: test 31 phases spanning ±0.75 bit periods
         for phase_us in np.linspace(-0.75 * TB_US, 0.75 * TB_US, 31):
             start = t0 + phase_us
             nbits = int(max(0, t1 - start) / TB_US) + 24
@@ -168,16 +237,19 @@ def _decode_track(times_s: np.ndarray,
 
             bits = [sig_at(start + k * TB_US) for k in range(nbits)]
 
+            # Step 5: all 10 possible UART bit offsets
             for uart_off in range(10):
                 phys = uart_decode(bits, uart_off)
                 if len(phys) < 2:
                     continue
 
+                # Step 6: both nibble-pair alignments
                 for nib_off in (0, 1):
                     logical = nibble_decode(phys, nib_off)
                     if len(logical) < 3:
                         continue
 
+                    # Step 7: score by (CRC valid, frame length, 0xAA preamble)
                     crc_calc = (-sum(logical[1:-1])) % 256
                     crc_ok   = crc_calc == logical[-1]
                     first_aa = int(logical[0] == 0xAA)
@@ -196,9 +268,8 @@ def _decode_track(times_s: np.ndarray,
                         "crc_ok":      bool(crc_ok),
                         "crc_calc":    f"{crc_calc:02X}",
                         "frame_hex":   " ".join(f"{v:02X}" for v in logical),
-                        # internal fields – not written to pcap
-                        "_log":  logical,
-                        "_t_us": t0,
+                        "_log":        logical,   # internal – used for dedup
+                        "_t_us":       t0,        # internal – used for dedup
                     }
 
                     if best is None or cand["score"] > best["score"]:
