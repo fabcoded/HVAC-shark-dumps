@@ -8,7 +8,7 @@ Air Conditioning) systems, analysed using the HVAC-shark toolkit.
 The tools to capture, convert, and dissect the data in this repository live in the
 main project:
 
-**[HVAC-shark](https://github.com/fabianschwamborn/HVAC-shark)**
+**[HVAC-shark](https://github.com/fabcoded/HVAC-shark)**
 
 Contents of HVAC-shark relevant to this repository:
 - **Wireshark Lua dissector** (`wireshark_dissectors/`) — load this to decode `.pcap` files from this repo
@@ -53,7 +53,7 @@ Captures are organised by device, then by session:
 ## Usage
 
 1. Install Wireshark
-2. Install the HVAC-shark dissector from the [HVAC-shark repository](https://github.com/fabianschwamborn/HVAC-shark/tree/master/wireshark_dissectors)
+2. Install the HVAC-shark dissector from the [HVAC-shark repository](https://github.com/fabcoded/HVAC-shark/tree/master/wireshark_dissectors)
 3. Open any `.pcap` file from this repository in Wireshark
 4. Packets are automatically decoded by the dissector
 
@@ -65,7 +65,7 @@ dissector. Please ensure you have the latest version installed for proper decodi
 ## For AI agents
 
 AI agents working in this repository should follow the instructions in
-[AGENTS.md](https://github.com/fabianschwamborn/HVAC-shark/blob/master/AGENTS.md)
+[AGENTS.md](https://github.com/fabcoded/HVAC-shark/blob/master/AGENTS.md)
 in the companion HVAC-shark repository. Unless otherwise advised by the repository
 owner, `AGENTS.md` is the authoritative guide for working conventions, protocol
 documentation standards, and confidence labelling.
