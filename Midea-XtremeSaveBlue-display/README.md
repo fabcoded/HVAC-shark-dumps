@@ -1,7 +1,12 @@
 # Midea extremeSaveBlue — Display Board Captures
 
-Capture sessions from the display board of a **Midea extremeSaveBlue** split unit.
-Logic analyser probes are attached to the display board's internal buses.
+> **Hardware identification note**: "Midea extremeSaveBlue" is used here solely as
+> the identifier for the specific test device under investigation. The brand and
+> product name are the property of their respective owners; their use is purely
+> descriptive and does not imply any affiliation or endorsement.
+
+Capture sessions from the display board of a **Midea extremeSaveBlue** split unit
+(test object). Logic analyser probes are attached to the display board's internal buses.
 
 ## Analysis policy — best effort, controversies explicit
 

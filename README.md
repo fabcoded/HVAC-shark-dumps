@@ -29,6 +29,13 @@ entries, or lack proper annotations. Users should not rely solely on this data f
 critical applications. Always validate and verify the information before using it
 in your projects.
 
+**Brand names and trademarks**: Any manufacturer, product, or model names mentioned
+in this repository (including but not limited to "Midea" and associated product
+lines) are used solely to identify the hardware under test. Their use is purely
+descriptive — to specify which physical device was captured — and does not imply
+affiliation, endorsement, or any commercial relationship with the respective
+trademark holders. All trademarks remain the property of their respective owners.
+
 ## Repository structure
 
 Captures are organised by device, then by session:
