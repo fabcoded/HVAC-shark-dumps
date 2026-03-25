@@ -84,3 +84,31 @@ Buses captured: R/T extension board, Wi-Fi module (UART), IR receiver (raw).
 - [SessionNotes.md](Session%202/SessionNotes.md)
 - [findings.md](Session%202/findings.md)
 - [channels.yaml](Session%202/channels.yaml)
+
+### Session 3
+
+**Key findings**: First direct HAHB (RS-485 transceiver) capture alongside CN1 R-T bus.
+XYE C6 Follow-Me observed as a set-acknowledgment handshake (C3+C6 pair, not standalone
+room temperature push). Temperature encoding hypothesis: XYE setT = T + 0x40; R-T setT =
+T + 0x70. Setpoint changes on HAHB relay to CN1 R-T within one polling slot. Unknown 0xD0
+broadcast frame identified as display→room-controller state push.
+
+Buses captured: HAHB RS-485 (XYE, both directions), CN1 R-T bidirectional.
+
+- [SessionNotes.md](Session%203/SessionNotes.md)
+- [findings.md](Session%203/findings.md)
+- [channels.yaml](Session%203/channels.yaml)
+
+### Session 4
+
+**Key opportunities**: First full all-bus capture (HAHB + R-T CN1 + Wi-Fi UART CN3 +
+mainboard UART CN1 simultaneously). Includes power-on sequence from cold start. Known
+operator actions: Heat mode throughout; setpoint 22→23→24→25 °C; fan Auto→Low→Mid→High→Auto.
+Follow-Me active at 13 °C (KJR-12x internal sensor) throughout — first session where
+UART 0x41 Follow-Me frames and XYE C6 frames can be correlated on the same timeline.
+No findings yet.
+
+Buses captured: HAHB RS-485 (XYE), CN1 R-T bidirectional, CN3 Wi-Fi UART, CN1 mainboard UART.
+
+- [SessionNotes.md](Session%204/SessionNotes.md)
+- [channels.yaml](Session%204/channels.yaml)
