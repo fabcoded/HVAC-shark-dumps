@@ -17,10 +17,11 @@ channels:
     circuitBoard: "display"
     busType: "hahb_raw_chip"
     channelframes: "sum"
+    subtract: true
 
   - name: "Channel 7"
     csv: Session 3.hahb.raw.csv
-    comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip"
+    comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip. Data on this channel are MFB-X to diplay packets"
     circuitBoard: "display"
     busType: "hahb_raw_chip"
     channelframes: "single"

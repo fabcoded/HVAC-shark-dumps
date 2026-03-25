@@ -75,18 +75,20 @@ from the other track is accessed during decoding of a given track.
 
     The highest-scoring candidate is kept as the burst's decoded frame.
 
-Post-processing – master/slave duplicate removal (two-track mode)
------------------------------------------------------------------
-After both tracks are decoded independently, slave frames that are exact
-duplicates of master frames can be removed.  A slave frame is considered a
-duplicate when:
-  - its decoded logical bytes are identical to a master frame, and
-  - its burst timestamp differs by no more than one UART byte time
-    (10 × TB ≈ 208 µs).
+Post-processing – directional separation (two-track mode, subtract=True)
+-------------------------------------------------------------------------
+After both tracks are decoded independently, master (sum) frames that also
+appear in slave (single) are removed from master.  A match is declared when:
+  - the decoded logical bytes are identical, and
+  - the burst timestamps differ by no more than one UART byte time
+    (10 × TB ≈ 208 µs) to absorb jitter between the two probe points.
 
-This yields a "slave-only" result: frames that the slave sent but the
-master did not (or vice versa), which isolates one direction of traffic on
-the half-duplex bus.
+Result:
+  master_out = master − slave  →  the direction slave does NOT see
+  slave_out  = slave as-is     →  the direction slave DOES see
+
+Together the two output channels separate both RS-485 directions cleanly
+without duplicates, despite the jitter between the sum and single probes.
 
 Internal frame dict fields (produced by _decode_track)
 -------------------------------------------------------
@@ -284,12 +286,26 @@ def _decode_track(times_s: np.ndarray,
 # ── Conversion to packet dicts ─────────────────────────────────────────────────
 
 def _frames_to_packets(frames: list[dict], channel_name: str) -> list[dict]:
-    """Convert HAHB frame dicts to standard packet dicts for pcap writing."""
+    """Convert HAHB frame dicts to standard packet dicts for pcap writing.
+
+    HAHB frames are XYE frames without the RS-485 end-of-frame byte (0x55).
+    The Wireshark dissector expects 16-byte requests and 32-byte responses
+    (i.e. standard XYE with 0x55 appended).  Because 0xAA + 0x55 = 0xFF ≡ -1
+    (mod 256), appending 0x55 does not invalidate the two's-complement CRC:
+      HAHB CRC = (-sum(bytes[1:-1])) % 256
+      XYE  CRC = (255 - (sum(bytes[0:-2]) + 0x55)) % 256
+               = (255 - (0xAA + sum(bytes[1:-2]) + 0x55)) % 256
+               = (255 - (0xFF + sum(bytes[1:-2]))) % 256
+               = (-sum(bytes[1:-2])) % 256  ← identical
+    So 0x55 is appended unconditionally to every decoded HAHB frame.
+    """
     packets: list[dict] = []
     for f in frames:
         raw_bytes = f.get("_log", [])
         if not raw_bytes:
             continue
+        # Restore the XYE end-of-frame epilogue stripped by the HAHB bus
+        raw_bytes = list(raw_bytes) + [0x55]
         start_byte = raw_bytes[0]
         packets.append({
             "channel":        channel_name,
@@ -321,12 +337,21 @@ def load_and_decode_hahb(
     input_csv    : path to the digital waveform CSV
     time_col     : name of the timestamp column (default "time")
     master_col   : column name for the master / bus signal
+                   In a two-probe HAHB capture this is the "sum" channel
+                   (directly on the RS-485 bus — sees all traffic from both
+                   directions).
     slave_col    : column name for the slave signal  (optional)
+                   In a two-probe HAHB capture this is the "single" channel
+                   (one side of the transceiver — sees only one direction).
     master_label : channel label used in output packets for master
     slave_label  : channel label used in output packets for slave
-    subtract     : if True, remove from slave packets any frames that are
-                   exact duplicates of master frames (same bytes, timestamp
-                   within one UART byte period)
+    subtract     : if True, remove from master (sum) any frames that also
+                   appear in slave (single), leaving only the direction that
+                   slave does NOT see.
+                   master_out = master − slave  (the "other" direction)
+                   slave_out  = slave as-is      (the "single" direction)
+                   Together the two outputs cleanly separate both directions
+                   without duplicates.
 
     Returns
     -------
@@ -339,9 +364,8 @@ def load_and_decode_hahb(
     df = pd.read_csv(input_csv)
     times = df[time_col].to_numpy()
 
-    master_packets: list[dict] = []
-    slave_packets:  list[dict] = []
-    master_frames:  list[dict] = []
+    master_frames: list[dict] = []
+    slave_frames:  list[dict] = []
 
     if master_col:
         if master_col not in df.columns:
@@ -353,7 +377,6 @@ def load_and_decode_hahb(
         master_frames = _decode_track(times, df[master_col].to_numpy(), master_label)
         crc_ok = sum(1 for f in master_frames if f["crc_ok"])
         print(f"    {len(master_frames)} frames  ({crc_ok} CRC-OK)")
-        master_packets = _frames_to_packets(master_frames, master_label)
 
     if slave_col:
         if slave_col not in df.columns:
@@ -366,21 +389,25 @@ def load_and_decode_hahb(
         crc_ok = sum(1 for f in slave_frames if f["crc_ok"])
         print(f"    {len(slave_frames)} frames  ({crc_ok} CRC-OK)")
 
-        if subtract and master_frames:
-            byte_time_us = 10 * TB_US
-            filtered = [
-                f for f in slave_frames
-                if not any(
-                    abs(f["_t_us"] - mf["_t_us"]) <= byte_time_us
-                    and f["_log"] == mf["_log"]
-                    for mf in master_frames
-                )
-            ]
-            removed = len(slave_frames) - len(filtered)
-            print(f"    Subtracted {removed} master-duplicate frames "
-                  f"→ {len(filtered)} slave-only frames")
-            slave_frames = filtered
+    # subtract=True: remove from master (sum) every frame that also appears
+    # in slave (single).  Jitter tolerance: timestamps may differ by up to
+    # one full UART byte time (10 bit-periods).
+    if subtract and master_frames and slave_frames:
+        byte_time_us = 10 * TB_US
+        filtered = [
+            f for f in master_frames
+            if not any(
+                abs(f["_t_us"] - sf["_t_us"]) <= byte_time_us
+                and f["_log"] == sf["_log"]
+                for sf in slave_frames
+            )
+        ]
+        removed = len(master_frames) - len(filtered)
+        print(f"    Subtracted {removed} slave-matched frames from master "
+              f"→ {len(filtered)} master-unique frames")
+        master_frames = filtered
 
-        slave_packets = _frames_to_packets(slave_frames, slave_label)
-
-    return master_packets, slave_packets
+    return (
+        _frames_to_packets(master_frames, master_label),
+        _frames_to_packets(slave_frames,  slave_label),
+    )

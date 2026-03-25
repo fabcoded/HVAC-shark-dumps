@@ -402,6 +402,63 @@ Examples (HAHB mode):
             print(f"[*] Merged {len(ir_packets)} IR frames -> "
                   f"{len(packets)} total packets")
 
+    # ── Auto-detect HAHB channels from channels.yaml ──────────────────────────
+    # Channels with busType "hahb_raw_chip" are decoded via the HAHB pipeline
+    # and written as XYE frames in the pcap.
+    # channelframes "sum"    → master (sees all bus traffic)
+    # channelframes "single" → slave  (one direction only)
+    hahb_channels = [
+        ch for ch in config.get("channels", [])
+        if ch.get("busType") == "hahb_raw_chip"
+    ]
+    if hahb_channels:
+        # Group by source CSV (multiple HAHB captures could share one session)
+        hahb_by_csv: dict[str, list[dict]] = {}
+        for ch in hahb_channels:
+            csv_name = ch.get("csv", "")
+            hahb_by_csv.setdefault(csv_name, []).append(ch)
+
+        for csv_name, chs in hahb_by_csv.items():
+            hahb_path = session_dir / csv_name
+            if not hahb_path.exists():
+                print(f"[!] HAHB CSV not found: {hahb_path}, skipping")
+                continue
+
+            master_ch = next(
+                (c for c in chs if c.get("channelframes") == "sum"), chs[0])
+            slave_ch  = next(
+                (c for c in chs if c.get("channelframes") == "single"), None)
+
+            # Time column: Saleae digital export uses "Time [s]" by default;
+            # override per channel via optional "timeColumn" yaml field.
+            time_col   = master_ch.get("timeColumn", "Time [s]")
+            master_col = master_ch["name"]
+            slave_col  = slave_ch["name"] if slave_ch else None
+
+            # HAHB frames are XYE on the wire — override busType in channel_meta
+            channel_meta[master_col] = {
+                **channel_meta.get(master_col, {}), "busType": "xye"}
+            if slave_col:
+                channel_meta[slave_col] = {
+                    **channel_meta.get(slave_col, {}), "busType": "xye"}
+
+            # subtract: read from the "sum" channel entry in channels.yaml
+            subtract = str(master_ch.get("subtract", "false")).lower() == "true"
+
+            master_pkts, slave_pkts = load_and_decode_hahb(
+                str(hahb_path),
+                time_col=time_col,
+                master_col=master_col,
+                slave_col=slave_col,
+                subtract=subtract,
+            )
+            hahb_pkts = master_pkts + slave_pkts
+            if hahb_pkts:
+                packets.extend(hahb_pkts)
+                packets.sort(key=lambda p: p["start_time"])
+                print(f"[*] Merged {len(hahb_pkts)} HAHB frames from {csv_name} "
+                      f"-> {len(packets)} total packets")
+
     if is_pcap:
         print(f"\n[*] Writing pcap: {out_path}")
         write_pcap(str(out_path), packets, channel_meta)
