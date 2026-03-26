@@ -8,7 +8,7 @@ and observe C4/C6 byte[20] across operating modes.
 
 ## Hardware under test
 
-- **Unit**: Midea extremeSaveBlue split A/C (test object)
+- **Unit**: Midea XtremeSaveBlue split A/C (test object)
 - **Capture point**: Same bus setup as Sessions 4–6 — all internal display board buses
 - **Logic analyser**: Saleae
 - **Wi-Fi stick**: REMOVED (no Wi-Fi module connected during this session)

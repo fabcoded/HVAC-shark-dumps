@@ -8,7 +8,7 @@ via the app to compare UART command path vs wired controller path.
 
 ## Hardware under test
 
-- **Unit**: Midea extremeSaveBlue split A/C (test object)
+- **Unit**: Midea XtremeSaveBlue split A/C (test object)
 - **Capture point**: Same bus setup as Sessions 4–7 — all internal display board buses
 - **Logic analyser**: Saleae
 - **Wi-Fi stick**: CONNECTED (used for app-based swing and temp control)

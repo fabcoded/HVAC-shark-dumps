@@ -2,7 +2,7 @@
 
 ## Session context
 
-First IR capture session on the Midea extremeSaveBlue display board.
+First IR capture session on the Midea XtremeSaveBlue display board.
 Key discovery: the Midea remote control uses a **NEC-like IR protocol** with
 48-bit frames (6 bytes), complement integrity pairs, and pulse-width encoding.
 Three device IDs were observed: `0xB2` (AC control), `0xB9` (installer/setter mode),

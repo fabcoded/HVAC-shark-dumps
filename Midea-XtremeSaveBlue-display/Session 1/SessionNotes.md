@@ -11,7 +11,7 @@ For analysis results, see [findings.md](findings.md).
 
 ## Hardware under test
 
-- **Unit**: Midea extremeSaveBlue split A/C
+- **Unit**: Midea XtremeSaveBlue split A/C
 - **Capture point**: Display board internal buses (CN1, CN3)
 - **Logic analyser**: Saleae
 

@@ -1,12 +1,43 @@
-# Midea extremeSaveBlue — Display Board Captures
+# Midea XtremeSaveBlue — Display Board Captures
 
-> **Hardware identification note**: "Midea extremeSaveBlue" is used here solely as
+> **Hardware identification note**: "Midea XtremeSaveBlue" is used here solely as
 > the identifier for the specific test device under investigation. The brand and
 > product name are the property of their respective owners; their use is purely
 > descriptive and does not imply any affiliation or endorsement.
 
-Capture sessions from the display board of a **Midea extremeSaveBlue** split unit
+Capture sessions from the display board of a **Midea XtremeSaveBlue** split unit
 (test object). Logic analyser probes are attached to the display board's internal buses.
+
+---
+
+## Hardware identification
+
+| Field              | Value                              | Source         |
+|--------------------|------------------------------------|----------------|
+| Name               | Split-Typ Klimaanlage              | Cloud API      |
+| Model code (sn8)   | `00000Q11`                         | Cloud API      |
+| Model number       | `44204`                            | Cloud API      |
+| Smart product ID   | `10006474`                         | Cloud API      |
+| Serial number      | `000000P0000000Q11841C3CEBD9A0000` | Cloud API      |
+| Appliance type     | `172` = `0xAC`                     | Cloud API + **Confirmed in all UART/R-T captures** |
+| Wi-Fi module MAC   | `18:41:C3:CE:BD:9A`                | Derived from SN (bytes 17–28) |
+
+### Appliance type `0xAC` — confirmed on all local buses
+
+The cloud-reported `type: 172 = 0xAC` matches exactly:
+- UART frames: `byte[2] = 0xAC` (appliance type field, every frame)
+- R/T frames: `byte[3] = 0xAC` (appliance type field, every frame)
+
+This cross-confirms the `0xAC` field is not just convention but device-specific.
+
+### SN and model in captures
+
+- `sn8: 00000Q11` — carried in UART `0x07` device-identification frames. In Sessions
+  2 and 4, the `0x07` body contains all `0xFF` (no SN transmitted in these sessions).
+- `model_number: 44204` — not observed directly in local bus captures; cloud-side only.
+- `smart_product_id / sn` — cloud-side only; do not appear on UART, XYE, or R/T buses.
+
+---
 
 ## Analysis policy — best effort, controversies explicit
 
@@ -33,17 +64,18 @@ to test it.
 
 ## Hardware
 
-- **Unit**: Midea extremeSaveBlue (split A/C)
+- **Unit**: Midea XtremeSaveBlue (split A/C), model `00000Q11`
 - **Capture point**: Display board (CN1, CN3, IR receiver)
 - **Analyser**: Saleae Logic
 
 ## Buses captured
 
-| Bus            | Connector | Direction      | Protocol          |
-|----------------|-----------|----------------|-------------------|
-| R/T ext. board | CN1       | Bidirectional  | HA/HB framing, UART-compatible body commands |
-| Wi-Fi module   | CN3       | Bidirectional  | Midea UART (SmartKey) |
-| IR receiver    | —         | Receive only   | Midea IR (NEC-like, 48-bit frames) |
+| Bus                   | Connector | Direction      | Protocol                                       |
+|-----------------------|-----------|----------------|------------------------------------------------|
+| R/T ext. board        | CN1       | Bidirectional  | HA/HB framing, UART-compatible body commands   |
+| Wi-Fi module          | CN3       | Bidirectional  | Midea UART (SmartKey)                          |
+| Mainboard internal    | CN1 grey/blue | Bidirectional | Display–mainboard proprietary (AA 20/30/31)  |
+| IR receiver           | —         | Receive only   | Midea IR (NEC-like, 48-bit frames)             |
 
 ## Session file conventions
 
@@ -112,3 +144,61 @@ Buses captured: HAHB RS-485 (XYE), CN1 R-T bidirectional, CN3 Wi-Fi UART, CN1 ma
 
 - [SessionNotes.md](Session%204/SessionNotes.md)
 - [channels.yaml](Session%204/channels.yaml)
+
+### Session 5
+
+Buses captured: HAHB RS-485 (XYE), CN1 R-T bidirectional, CN3 Wi-Fi UART, CN1 mainboard UART.
+
+- [SessionNotes.md](Session%205/SessionNotes.md)
+- [channels.yaml](Session%205/channels.yaml)
+
+### Session 6
+
+**Key finding**: Service menu ground truth. Sensor temperatures read directly from the
+display PCB service menu: Tp = 74 °C, T1 = 18 °C, T3 = 2 °C, T4 = 4 °C. Cross-validates
+the XYE `(raw − 40) / 2` temperature formula and confirms UART R/T body[14] = Tp in direct
+integer °C. Also exposed the Session 3 misidentification of XYE byte[19] as Tp — byte[19]
+is a fixed device-type field (`0xBC`); actual Tp is at byte[22].
+
+Buses captured: HAHB RS-485 (XYE), CN1 R-T bidirectional, CN3 Wi-Fi UART, CN1 mainboard UART.
+
+- [SessionNotes.md](Session%206/SessionNotes.md)
+- [channels.yaml](Session%206/channels.yaml)
+
+### Session 7
+
+**Key finding**: Full mode sweep (Heat → Cool → Dry → Fan → Auto) with single-step
+setpoint transitions 16–30 °C. Mode byte values confirmed for all modes. Minimum setpoint
+16 °C and maximum setpoint 30 °C confirmed. Follow-Me disabled at end of session.
+
+Buses captured: HAHB RS-485 (XYE), CN1 R-T bidirectional, CN1 mainboard UART.
+Wi-Fi module removed.
+
+- [SessionNotes.md](Session%207/SessionNotes.md)
+- [channels.yaml](Session%207/channels.yaml)
+
+### Session 8
+
+**Key finding**: Swing and vane position investigation. Swing on/off via both KJR-12x
+wired controller and app (Wi-Fi). Fixed vane positions (5 vertical + 5 horizontal) via
+app only. Power consumption (Group 4) frames captured and decoded — BCD encoding confirmed
+(113.81 kWh cumulative, 381.4 W real-time). Wi-Fi stick connected.
+
+Buses captured: HAHB RS-485 (XYE), CN1 R-T bidirectional, CN3 Wi-Fi UART, CN1 mainboard UART.
+
+- [SessionNotes.md](Session%208/SessionNotes.md)
+- [channels.yaml](Session%208/channels.yaml)
+
+### Session 9
+
+**Key finding**: Cold-boot capture with no Wi-Fi module. Captures the full power-on
+initialisation sequence including the rare mainboard `AA 50` init frame (confirmed boot-
+specific), bus sync `0xFF` bytes, and the first R/T handshake. Mode sweep: Fan/Off
+(`0x00`) → Dry (`0x81`) → `0x91` (unidentified) → Cool (`0x82`) → Heat (`0x84`).
+Mode `0x91` is a new unconfirmed code, possibly an Auto variant.
+
+Buses captured: HAHB RS-485 (XYE), CN1 R-T bidirectional, CN3 Wi-Fi UART (no dongle —
+mainboard heartbeat only), CN1 mainboard UART.
+
+- [SessionNotes.md](Session%209/SessionNotes.md)
+- [channels.yaml](Session%209/channels.yaml)

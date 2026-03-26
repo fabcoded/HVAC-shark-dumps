@@ -2,7 +2,7 @@
 
 ## Session context
 
-First capture session on the Midea extremeSaveBlue display board.
+First capture session on the Midea XtremeSaveBlue display board.
 Key discovery: the **R/T extension board bus (CN1) carries UART-compatible commands**
 over HA/HB framing. The body command set (`0xC0`, `0xC1`, `0x41`, `0x93`) is identical
 to the Midea UART protocol, establishing the link between the R/T pin and the UART
@@ -73,7 +73,7 @@ wifi module).
 ### Conclusion
 
 The sync byte validation in the spec is not reliable for this device
-(Midea extremeSaveBlue, display board wifi interface). Dissectors should treat
+(Midea XtremeSaveBlue, display board wifi interface). Dissectors should treat
 `sync == 0x00` as "not implemented" rather than an error.
 
 

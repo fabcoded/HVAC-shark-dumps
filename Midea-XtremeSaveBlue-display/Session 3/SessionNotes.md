@@ -7,7 +7,7 @@ For analysis results, see findings.md (not yet written).
 
 ## Hardware under test
 
-- **Unit**: Midea extremeSaveBlue split A/C
+- **Unit**: Midea XtremeSaveBlue split A/C
 - **Capture point**: HAHB RS-485 bus, probed directly at the RS-485 transceiver chip
   on the adapter board; plus the R/T single-wire bus on CN1 (same as Session 1)
 - **Logic analyser**: Saleae

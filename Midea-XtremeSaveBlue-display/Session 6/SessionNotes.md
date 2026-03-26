@@ -7,7 +7,7 @@ For analysis results, see findings.md (not yet written).
 
 ## Hardware under test
 
-- **Unit**: Midea extremeSaveBlue split A/C (test object)
+- **Unit**: Midea XtremeSaveBlue split A/C (test object)
 - **Capture point**: Same bus setup as Sessions 4/5 — all internal display board buses simultaneously:
   HAHB RS-485 transceiver (adapter board), R/T CN1 bidirectional,
   Wi-Fi module CN3 UART, mainboard UART CN1 grey/blue
