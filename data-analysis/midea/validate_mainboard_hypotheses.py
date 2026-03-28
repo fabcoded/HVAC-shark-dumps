@@ -335,8 +335,8 @@ def compare_swing(mb_val, rt_val):
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-DUMP_BASE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         '..', 'HVAC-shark-dumps', 'Midea-XtremeSaveBlue-display')
+DUMP_BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         '..', '..', 'Midea-XtremeSaveBlue-display')
 
 SESSIONS = [4, 7, 8, 9]
 
