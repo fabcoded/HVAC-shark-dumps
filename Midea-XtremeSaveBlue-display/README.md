@@ -89,6 +89,11 @@ Each session folder contains:
 | `Session N.csv`   | Pre-decoded Saleae Logic export (input to converter).            |
 | `session.pcap`    | Converted pcap, loadable in Wireshark with the HVAC-shark dissector. |
 
+**Note on cut-off packets**: The first packet(s) in a capture session may be
+truncated or show CRC/checksum errors. This happens when the logic analyser
+begins recording mid-frame — the converter outputs the partial frame data as-is.
+These are not protocol errors but capture artefacts; they can be safely ignored.
+
 ## Sessions
 
 ### Session 1
