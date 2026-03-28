@@ -12,7 +12,7 @@ Supports two output modes:
   pcap (--pcap)     → Wireshark-ready capture with HVAC_shark v2 framing
 
 When a channels.yaml is found (or given via --config), channel metadata
-(circuitBoard, comment) is embedded in the HVAC_shark v2 header so the
+(connectedComponents, comment) is embedded in the HVAC_shark v2 header so the
 Wireshark dissector can display it.
 
 Serial-mode input CSV columns:  name, type, start_time, duration, data
@@ -31,8 +31,8 @@ HVAC_shark v2 header layout:
   --- extended fields (version 0x01) ---
   13      1     logicChannel name length (N)
   14      N     logicChannel name        (UTF-8)
-  14+N    1     circuitBoard length      (M)
-  15+N    M     circuitBoard             (UTF-8)
+  14+N    1     connectedComponents length      (M)
+  15+N    M     connectedComponents             (UTF-8)
   15+N+M  1     comment length           (C)
   16+N+M  C     comment                  (UTF-8)
   --- protocol data follows ---
@@ -45,7 +45,10 @@ from pathlib import Path
 
 from decoder_midea_serial import load_dump, extract_packets, GAP_MULTIPLIER
 from decoder_midea_ir     import load_and_decode_ir_channels
-from decoder_midea_hahb   import load_and_decode_hahb
+try:
+    from decoder_midea_hahb import load_and_decode_hahb
+except ImportError:
+    load_and_decode_hahb = None  # numpy not installed — HAHB decoding unavailable
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 HVAC_SHARK_MAGIC   = b"HVAC_shark"
@@ -179,9 +182,21 @@ def write_pcap(filepath: str, packets: list[dict],
         for pkt in packets:
             ch      = pkt["channel"]
             meta    = channel_meta.get(ch, {})
-            board   = meta.get("circuitBoard", "")
+            board   = meta.get("connectedComponents", "")
             comment = meta.get("comment", "")
+            direction = meta.get("direction", "")
             bus_type = meta.get("busType", "xye")
+            # R/T bidirectional: override per-frame using start byte
+            # 0xAA = bus adapter → display (queries/commands) = toACdisplay
+            # 0x55 = display → bus adapter (responses) = fromACdisplay
+            if bus_type == "r-t_1" and direction in ("unknown", ""):
+                raw = pkt["raw_bytes"]
+                if raw and raw[0] == 0xAA:
+                    direction = "toACdisplay"
+                elif raw and raw[0] == 0x55:
+                    direction = "fromACdisplay"
+            if direction and f"[{direction}]" not in comment:
+                comment = f"{comment} [{direction}]" if comment else f"[{direction}]"
 
             hvac_payload = build_hvac_shark_payload(
                 pkt["raw_bytes"], ch, board, comment, bus_type)
@@ -200,14 +215,51 @@ def write_pcap(filepath: str, packets: list[dict],
 
 # ── CSV writer ────────────────────────────────────────────────────────────────
 
-def write_csv(filepath: str, packets: list[dict]):
-    fieldnames = ["channel", "start_time", "packet_len",
+def write_csv(filepath: str, packets: list[dict],
+              channel_meta: dict[str, dict] | None = None):
+    fieldnames = ["channel", "direction", "start_time", "packet_len",
                   "packet_content", "start_byte", "valid_start"]
+    channel_meta = channel_meta or {}
     with open(filepath, "w", newline="") as f:
         writer = csvmod.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for pkt in packets:
-            writer.writerow({k: pkt[k] for k in fieldnames})
+            meta = channel_meta.get(pkt.get("channel", ""), {})
+            direction = meta.get("direction", "")
+            bus_type = meta.get("busType", "")
+            # R/T per-frame direction from start byte
+            # 0xAA = bus adapter → display, 0x55 = display → bus adapter
+            if bus_type == "r-t_1" and direction in ("unknown", ""):
+                raw = pkt.get("raw_bytes", [])
+                if raw and raw[0] == 0xAA:
+                    direction = "toACdisplay"
+                elif raw and raw[0] == 0x55:
+                    direction = "fromACdisplay"
+            row = {k: pkt.get(k, "") for k in fieldnames}
+            row["direction"] = direction
+            writer.writerow(row)
+
+
+
+def write_outputs(out_path: Path, packets: list[dict],
+                  channel_meta: dict[str, dict],
+                  only_pcap: bool = False, only_csv: bool = False):
+    """Write pcap and/or csv from the same decoded packets."""
+    pcap_path = out_path.with_suffix(".pcap")
+    csv_path  = (out_path.with_suffix(".csv") if out_path.suffix == ".pcap"
+                 else out_path.parent / "midea_packets.csv")
+
+    wrote = []
+    if not only_csv:
+        print(f"[*] Writing pcap: {pcap_path}")
+        write_pcap(str(pcap_path), packets, channel_meta)
+        wrote.append(str(pcap_path))
+    if not only_pcap:
+        print(f"[*] Writing CSV:  {csv_path}")
+        write_csv(str(csv_path), packets, channel_meta)
+        wrote.append(str(csv_path))
+
+    print(f"[ok] Saved -> {' + '.join(wrote)}")
 
 
 # ── CLI helpers ───────────────────────────────────────────────────────────────
@@ -274,9 +326,12 @@ Examples (HAHB mode):
 
     # Common output args
     parser.add_argument("-o", "--output",
-        help="Output file (.csv or .pcap; auto-named if omitted)")
-    parser.add_argument("--pcap", action="store_true",
-        help="Force pcap output (default output name: session.pcap)")
+        help="Output base path (auto-named if omitted)")
+    fmt = parser.add_mutually_exclusive_group()
+    fmt.add_argument("--pcap", action="store_true",
+        help="Write only pcap (skip csv)")
+    fmt.add_argument("--csv", action="store_true",
+        help="Write only csv (skip pcap)")
 
     args = parser.parse_args()
 
@@ -284,6 +339,9 @@ Examples (HAHB mode):
     if args.hahb:
         if not args.hahb_master and not args.hahb_slave:
             parser.error("--hahb requires at least --hahb-master or --hahb-slave")
+
+        if load_and_decode_hahb is None:
+            parser.error("HAHB decoding requires numpy: pip install numpy")
 
         master_label = args.hahb_master_label
         slave_label  = args.hahb_slave_label
@@ -308,29 +366,21 @@ Examples (HAHB mode):
         if args.hahb_master:
             channel_meta[master_label] = {
                 "busType":      "xye",
-                "circuitBoard": "",
+                "connectedComponents": "",
                 "comment":      "HAHB master",
             }
         if args.hahb_slave:
             channel_meta[slave_label] = {
                 "busType":      "xye",
-                "circuitBoard": "",
+                "connectedComponents": "",
                 "comment":      "HAHB slave" + (" (subtracted)" if args.hahb_subtract else ""),
             }
 
         out_path = Path(args.output) if args.output else Path("session.pcap")
-        is_pcap  = args.pcap or str(out_path).endswith(".pcap")
 
         _print_summary(all_packets)
-
-        if is_pcap:
-            print(f"\n[*] Writing pcap: {out_path}")
-            write_pcap(str(out_path), all_packets, channel_meta)
-        else:
-            print(f"\n[*] Writing CSV: {out_path}")
-            write_csv(str(out_path), all_packets)
-
-        print(f"[ok] Saved -> {out_path}")
+        write_outputs(out_path, all_packets, channel_meta,
+                      only_pcap=args.pcap, only_csv=args.csv)
         return
 
     # ── Serial mode ────────────────────────────────────────────────────────────
@@ -350,19 +400,24 @@ Examples (HAHB mode):
             name = ch.get("name", "")
             if name:
                 channel_meta[name] = ch
+        VALID_DIRECTIONS = {"toACmainboard", "fromACmainboard",
+                            "toACdisplay", "fromACdisplay",
+                            "toACbusadapter_HAHB", "fromACbusadapter_HAHB",
+                            "unknown", ""}
         for name, meta in channel_meta.items():
-            print(f"    {name}: {meta.get('comment', '')}")
+            d = meta.get("direction", "")
+            d_label = f"  [{d}]" if d else ""
+            if d and d not in VALID_DIRECTIONS:
+                print(f"    WARNING: {name}: invalid direction '{d}' "
+                      f"(expected: {', '.join(sorted(VALID_DIRECTIONS - {''}))})")
+            print(f"    {name}: {meta.get('comment', '')}{d_label}")
     else:
         print(f"[*] No channels.yaml found at {config_path}, proceeding without metadata")
 
     if args.output:
         out_path = Path(args.output)
-    elif args.pcap:
-        out_path = session_dir / "session.pcap"
     else:
-        out_path = session_dir / "midea_packets.csv"
-
-    is_pcap = args.pcap or str(out_path).endswith(".pcap")
+        out_path = session_dir / "session.pcap"
 
     # Collect unique CSV files from serial channels (per-channel csv field)
     serial_csvs: list[str] = []
@@ -445,13 +500,22 @@ Examples (HAHB mode):
             # subtract: read from the "sum" channel entry in channels.yaml
             subtract = str(master_ch.get("subtract", "false")).lower() == "true"
 
-            master_pkts, slave_pkts = load_and_decode_hahb(
-                str(hahb_path),
-                time_col=time_col,
-                master_col=master_col,
-                slave_col=slave_col,
-                subtract=subtract,
-            )
+            if load_and_decode_hahb is None:
+                print(f"    SKIPPING HAHB {csv_name}: numpy not installed (pip install numpy)")
+                continue
+
+            try:
+                master_pkts, slave_pkts = load_and_decode_hahb(
+                    str(hahb_path),
+                    time_col=time_col,
+                    master_col=master_col,
+                    slave_col=slave_col,
+                    subtract=subtract,
+                )
+            except (ImportError, ModuleNotFoundError) as e:
+                print(f"    SKIPPING HAHB {csv_name}: {e}")
+                continue
+
             hahb_pkts = master_pkts + slave_pkts
             if hahb_pkts:
                 packets.extend(hahb_pkts)
@@ -459,14 +523,8 @@ Examples (HAHB mode):
                 print(f"[*] Merged {len(hahb_pkts)} HAHB frames from {csv_name} "
                       f"-> {len(packets)} total packets")
 
-    if is_pcap:
-        print(f"\n[*] Writing pcap: {out_path}")
-        write_pcap(str(out_path), packets, channel_meta)
-    else:
-        print(f"\n[*] Writing CSV: {out_path}")
-        write_csv(str(out_path), packets)
-
-    print(f"[ok] Saved -> {out_path}")
+    write_outputs(out_path, packets, channel_meta,
+                  only_pcap=args.pcap, only_csv=args.csv)
 
 
 if __name__ == "__main__":

@@ -8,44 +8,56 @@ channels:
   - name: "mainboardGrey"
     csv: "Session 4.csv"
     comment: "CN1grey wire - to mainboard - rxd pin"
-    circuitBoard: "display"
+    connectedComponents: "ACdisplay-ACmainboard"
     busType: "disp-mainboard_1"
+    direction: "toACmainboard"
 
   - name: "mainboardBlue"
     csv: "Session 4.csv"
     comment: "CN1 blue wire - to mainboard - txd pin"
-    circuitBoard: "display"
+    connectedComponents: "ACdisplay-ACmainboard"
     busType: "disp-mainboard_1"
+    direction: "fromACmainboard"
 
   - name: "wifiBrown"
     csv: "Session 4.csv"
     comment: "CN3 brown wire — rx wifi module"
-    circuitBoard: "display"
+    connectedComponents: "wifidongle-ACdisplay"
     busType: "uart"
+    direction: "toACdisplay"
 
   - name: "wifiOrange"
     csv: "Session 4.csv"
     comment: "orange wire — tx wifi module"
-    circuitBoard: "display"
+    connectedComponents: "wifidongle-ACdisplay"
     busType: "uart"
+    direction: "fromACdisplay"
 
   - name: "bidirectionalExtensionBoard"
     csv: "Session 4.csv"       # pre-decoded Saleae Logic export — this is the input
     comment: "CN1 extension board bidirectional bus - r/t pin"
-    circuitBoard: "display"
+    connectedComponents: "ACdisplay-busadapter_HAHB"
+
     busType: "r-t_1"
+    direction: "unknown"
+
+
 
   - name: "Channel 6"
     csv: Session 4.hahb.raw.csv
     comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip"
-    circuitBoard: "display"
+    connectedComponents: "busadapter_HAHB-roomcontroller"
+
     busType: "hahb_raw_chip"
     channelframes: "sum"
+    direction: "toACbusadapter_HAHB"  # computed: sum minus single
     subtract: true
 
   - name: "Channel 7"
     csv: Session 4.hahb.raw.csv
     comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip. Data on this channel are MFB-X to diplay packets"
-    circuitBoard: "display"
+    connectedComponents: "busadapter_HAHB-roomcontroller"
+
     busType: "hahb_raw_chip"
     channelframes: "single"
+    direction: "fromACbusadapter_HAHB"  # direct capture: MFB-X to display
