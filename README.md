@@ -64,7 +64,8 @@ any external-captures content.
 
 | Folder                          | Hardware                        |
 |---------------------------------|---------------------------------|
-| `Midea-extremeSaveBlue-display` | Midea extremeSaveBlue split A/C — display board (CN1, CN3, IR) |
+| `Midea-XtremeSaveBlue-display`  | Midea extremeSaveBlue split A/C — display board (CN1, CN3, IR), logic analyzer |
+| `Midea-XtremeSaveBlue-dongle`   | Midea extremeSaveBlue split A/C — MFB-C XYE bus, HVAC-shark ESP dongle |
 
 ## Usage
 
