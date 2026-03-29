@@ -201,7 +201,7 @@ def write_pcap(filepath: str, packets: list[dict],
             hvac_payload = build_hvac_shark_payload(
                 pkt["raw_bytes"], ch, board, comment, bus_type)
 
-            src_port = (channel_names.index(ch) + 1) if ch in channel_names else 0
+            src_port = (channel_names.index(ch) + 10001) if ch in channel_names else 10000
             frame    = _build_frame(hvac_payload, src_port)
 
             ts      = pkt["start_time"]
@@ -386,6 +386,15 @@ Examples (HAHB mode):
     # ── Serial mode ────────────────────────────────────────────────────────────
     session_dir = Path(args.session_dir)
 
+    if not session_dir.is_dir():
+        parser.error(
+            f"Session directory not found: {session_dir}\n\n"
+            f"Usage:  {parser.prog} <session_dir> [--pcap]\n\n"
+            f"The session directory must contain a channels.yaml and the\n"
+            f"exported CSV files from the Saleae logic analyzer.\n"
+            f"See --help for full usage and examples."
+        )
+
     config_path  = Path(args.config) if args.config else session_dir / "channels.yaml"
     channel_meta = {}
     config: dict = {}
@@ -439,6 +448,12 @@ Examples (HAHB mode):
         records.sort(key=lambda r: r["start_time"])
     else:
         fallback = session_dir / "logic-dump.csv"
+        if not fallback.exists():
+            print(f"[!] ERROR: No input data found in {session_dir}")
+            print(f"    Expected: channels.yaml with CSV references, "
+                  f"-i <csv>, or {fallback.name}")
+            print(f"    Run '{parser.prog} --help' for usage.")
+            sys.exit(1)
         print(f"[*] Loading: {fallback}")
         records = load_dump(str(fallback))
 
@@ -510,6 +525,8 @@ Examples (HAHB mode):
                     time_col=time_col,
                     master_col=master_col,
                     slave_col=slave_col,
+                    master_label=master_col,
+                    slave_label=slave_col or "slave",
                     subtract=subtract,
                 )
             except (ImportError, ModuleNotFoundError) as e:

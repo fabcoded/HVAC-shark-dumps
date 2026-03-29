@@ -122,6 +122,8 @@ Dependencies
 """
 
 import csv as csvmod
+import time as _time
+import sys
 from pathlib import Path
 
 try:
@@ -157,11 +159,11 @@ def _decode_track(times_s: np.ndarray,
     edge_t_us = times_s[edge_idx] * 1e6
     edge_lvl  = raw_signal[edge_idx]
 
-    def sig_at(t_us: float) -> int:
-        """Look up signal level at t_us via binary search on the edge table."""
-        i = int(np.searchsorted(edge_t_us, t_us, side="right")) - 1
-        i = max(0, min(i, len(edge_lvl) - 1))
-        return 1 - int(edge_lvl[i])   # invert: wire idle=1 → logical idle=0
+    def sig_at_batch(t_arr: np.ndarray) -> list[int]:
+        """Vectorized signal lookup: binary search on edge table for all timestamps at once."""
+        idx = np.searchsorted(edge_t_us, t_arr, side="right").astype(np.intp) - 1
+        np.clip(idx, 0, len(edge_lvl) - 1, out=idx)
+        return (1 - edge_lvl[idx]).tolist()
 
     # Step 2 – Burst detection: idle > IDLE_US µs separates bursts.
     # Step 3 – Glitch-tolerant start: first stable edge ≥ MIN_EDGE_US µs.
@@ -226,8 +228,29 @@ def _decode_track(times_s: np.ndarray,
 
     # Steps 4 + 5 + 6 + 7 – Phase search, UART decode, nibble decode, scoring.
     frames: list[dict] = []
+    n_bursts = len(bursts)
+    t_start = _time.monotonic()
+    next_pct = 5   # report at 5% intervals
 
     for bi, (t0, t1) in enumerate(bursts):
+        # Progress: report at first burst, then every 5%
+        if n_bursts > 0:
+            pct = (bi + 1) * 100 // n_bursts
+            if bi == 0 or pct >= next_pct:
+                elapsed = _time.monotonic() - t_start
+                if bi > 0:
+                    rate = (bi + 1) / elapsed
+                    remaining = (n_bursts - bi - 1) / rate
+                    print(f"    [{source_name}] burst {bi+1}/{n_bursts} "
+                          f"({pct}%)  elapsed {elapsed:.1f}s  "
+                          f"remaining ~{remaining:.1f}s",
+                          flush=True)
+                else:
+                    print(f"    [{source_name}] burst {bi+1}/{n_bursts} "
+                          f"(0%)  starting...", flush=True)
+                while next_pct <= pct:
+                    next_pct += 5
+
         best: dict | None = None
 
         # Step 4: test 31 phases spanning ±0.75 bit periods
@@ -237,7 +260,7 @@ def _decode_track(times_s: np.ndarray,
             if nbits < 20:
                 continue
 
-            bits = [sig_at(start + k * TB_US) for k in range(nbits)]
+            bits = sig_at_batch(start + np.arange(nbits) * TB_US)
 
             # Step 5: all 10 possible UART bit offsets
             for uart_off in range(10):
@@ -361,7 +384,13 @@ def load_and_decode_hahb(
     """
     import pandas as pd
 
+    csv_path = Path(input_csv)
+    csv_size_mb = csv_path.stat().st_size / (1024 * 1024)
+    print(f"[*] HAHB loading {csv_path.name} ({csv_size_mb:.1f} MB)...", flush=True)
+    t_load = _time.monotonic()
     df = pd.read_csv(input_csv)
+    dt_load = _time.monotonic() - t_load
+    print(f"    {len(df):,} rows loaded in {dt_load:.1f}s", flush=True)
     times = df[time_col].to_numpy()
 
     master_frames: list[dict] = []
@@ -373,7 +402,7 @@ def load_and_decode_hahb(
                 f"Column '{master_col}' not found in {input_csv}. "
                 f"Available: {list(df.columns)}"
             )
-        print(f"[*] HAHB decode: master '{master_col}' → '{master_label}'")
+        print(f"[*] HAHB decode: master '{master_col}' -> '{master_label}'", flush=True)
         master_frames = _decode_track(times, df[master_col].to_numpy(), master_label)
         crc_ok = sum(1 for f in master_frames if f["crc_ok"])
         print(f"    {len(master_frames)} frames  ({crc_ok} CRC-OK)")
@@ -384,7 +413,7 @@ def load_and_decode_hahb(
                 f"Column '{slave_col}' not found in {input_csv}. "
                 f"Available: {list(df.columns)}"
             )
-        print(f"[*] HAHB decode: slave  '{slave_col}' → '{slave_label}'")
+        print(f"[*] HAHB decode: slave  '{slave_col}' -> '{slave_label}'", flush=True)
         slave_frames = _decode_track(times, df[slave_col].to_numpy(), slave_label)
         crc_ok = sum(1 for f in slave_frames if f["crc_ok"])
         print(f"    {len(slave_frames)} frames  ({crc_ok} CRC-OK)")
@@ -404,7 +433,7 @@ def load_and_decode_hahb(
         ]
         removed = len(master_frames) - len(filtered)
         print(f"    Subtracted {removed} slave-matched frames from master "
-              f"→ {len(filtered)} master-unique frames")
+              f"-> {len(filtered)} master-unique frames")
         master_frames = filtered
 
     return (
