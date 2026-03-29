@@ -51,6 +51,15 @@ Captures are organised by device, then by session:
     session.pcap         Converted pcap, open directly in Wireshark
 ```
 
+## External captures
+
+The `external-captures/` directory contains protocol frames sourced from
+third-party community posts, forums, and public repositories. **These
+subfolders may be licensed differently from the rest of this repository.**
+Each subfolder's `capture.yaml` header states the original source, author,
+and applicable license. Please review those headers before redistributing
+any external-captures content.
+
 ## Devices
 
 | Folder                          | Hardware                        |

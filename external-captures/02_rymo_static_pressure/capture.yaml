@@ -1,0 +1,105 @@
+# Midea XYE Capture: rymo — Static Pressure Control
+# Source: https://community.home-assistant.io/t/midea-a-c-via-local-xye/857679/20
+# License: HA Community posts are CC BY-NC-SA 4.0
+# User: rymo
+# Date: March 2025
+#
+# Hardware:
+#   Indoor unit: Unknown Midea ducted unit with static pressure control (SP0..SP4)
+#   Capture method: Monitoring wall controller XYE commands
+#
+# Protocol observations:
+#   C6 response byte 10 (ext_caps_2) = 0x1C (differs from mdrobnak's 0x98)
+#   Static pressure in C6 command byte 8 lower nibble (0x10..0x14 = SP0..SP4)
+#   Static pressure readback in C6 response byte 24 lower nibble (0x20..0x24)
+#   C6 command byte 10 = 0x04 for static pressure (vs 0x02/0x06 for follow-me)
+
+sessions:
+
+  # =========================================================================
+  # SESSION 1: Static Pressure sweep SP0 → SP4
+  # =========================================================================
+  # Wall controller cycled through all 5 static pressure levels.
+  # Each produces a C6 command + response pair.
+  - session: static_pressure_sweep
+    session_index: "01"
+    date: "2025-03-20"
+    description: >
+      Wall controller cycled through all 5 static pressure settings (SP0..SP4).
+      C6 command byte 8: 0x10=SP0, 0x11=SP1, 0x12=SP2, 0x13=SP3, 0x14=SP4.
+      C6 response byte 24: 0x20=SP0, 0x21=SP1, ..., 0x24=SP4 (lower nibble echoes level).
+      C6 command byte 10 = 0x04, which may mean "config set" (distinct from follow-me 0x02/0x06).
+      Byte 11 = 0x17 (23°C?) — purpose unclear, consistent across all SP commands.
+    context: { mode: unknown, test: static_pressure_sp0_through_sp4 }
+
+    frames:
+      # --- SP0 ---
+      - raw: "AA:C6:00:00:00:00:00:00:10:00:04:17:00:39:D6:55"
+        dir: master_to_unit
+        description: "Set static pressure SP0 (lowest)"
+        decode:
+          byte_08: { value: 0x10, meaning: "SP0 — lower nibble 0x0" }
+          byte_10: { value: 0x04, meaning: "config/SP sub-command (not follow-me)" }
+          byte_11: { value: 0x17, meaning: "23 — purpose unknown, consistent" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:30:1C:00:00:00:00:00:10:80:54:BE:D6:52:00:00:20:00:00:00:00:00:04:55"
+        dir: unit_to_master
+        description: "SP0 confirmed in response"
+        decode:
+          byte_10: { value: 0x1C, meaning: "ext_caps_2 — different from mdrobnak (0x98)" }
+          byte_16: { value: 0x10, meaning: "ext_oper_mode — possibly fan_only or off" }
+          byte_17: { value: 0x80, meaning: "auto fan" }
+          byte_21: { value: 0x52, meaning: "T4 outdoor = (0x52-0x28)/2 = 21°C" }
+          byte_24: { value: 0x20, meaning: "SP readback: lower nibble 0x0 = SP0" }
+
+      # --- SP1 ---
+      - raw: "AA:C6:00:00:00:00:00:00:11:00:04:17:00:39:D5:55"
+        dir: master_to_unit
+        description: "Set static pressure SP1"
+        decode:
+          byte_08: { value: 0x11, meaning: "SP1" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:30:1C:00:00:00:00:00:10:80:54:BE:D6:52:00:00:21:00:00:00:00:00:03:55"
+        dir: unit_to_master
+        description: "SP1 confirmed"
+        decode:
+          byte_24: { value: 0x21, meaning: "SP readback: SP1" }
+
+      # --- SP2 ---
+      - raw: "AA:C6:00:00:00:00:00:00:12:00:04:17:00:39:D4:55"
+        dir: master_to_unit
+        description: "Set static pressure SP2"
+        decode:
+          byte_08: { value: 0x12, meaning: "SP2" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:30:1C:00:00:00:00:00:10:80:54:BE:D6:52:00:00:22:00:00:00:00:00:02:55"
+        dir: unit_to_master
+        description: "SP2 confirmed"
+        decode:
+          byte_24: { value: 0x22, meaning: "SP readback: SP2" }
+
+      # --- SP3 ---
+      - raw: "AA:C6:00:00:00:00:00:00:13:00:04:17:00:39:D3:55"
+        dir: master_to_unit
+        description: "Set static pressure SP3"
+        decode:
+          byte_08: { value: 0x13, meaning: "SP3" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:30:1C:00:00:00:00:00:10:80:54:BE:D6:52:00:00:23:00:00:00:00:00:01:55"
+        dir: unit_to_master
+        description: "SP3 confirmed"
+        decode:
+          byte_24: { value: 0x23, meaning: "SP readback: SP3" }
+
+      # --- SP4 ---
+      - raw: "AA:C6:00:00:00:00:00:00:14:00:04:17:00:39:D2:55"
+        dir: master_to_unit
+        description: "Set static pressure SP4 (highest)"
+        decode:
+          byte_08: { value: 0x14, meaning: "SP4" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:30:1C:00:00:00:00:00:10:80:54:BE:D6:52:00:00:24:00:00:00:00:00:00:55"
+        dir: unit_to_master
+        description: "SP4 confirmed"
+        decode:
+          byte_24: { value: 0x24, meaning: "SP readback: SP4" }

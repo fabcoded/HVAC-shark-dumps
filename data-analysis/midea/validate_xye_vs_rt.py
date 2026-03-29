@@ -182,6 +182,15 @@ def decode_xye_response(proto):
         'turbo':       (proto[20] >> 1) & 1,               # §2.2 byte[20] bit1
         'eco_sleep':   proto[20] & 0x01,                   # §2.2 byte[20] bit0
         'v_swing':     (proto[20] >> 2) & 1,               # §2.2 byte[20] bit2
+        # ── New fields for X-08..X-12 + sanity ────────────────────────
+        'mode_flags_raw': proto[20],                       # §8 byte[20] full
+        'op_flags_raw':   proto[21],                       # §8 byte[21] full
+        'pump':        (proto[21] >> 2) & 1,               # §8 byte[21] bit2
+        'locked':      (proto[21] >> 7) & 1,               # §8 byte[21] bit7
+        # Raw bytes for in-loop sanity
+        'byte19_raw':  proto[19],
+        'byte20_raw':  proto[20],
+        'byte21_raw':  proto[21],
     }
 
 
@@ -285,6 +294,18 @@ def decode_rt_c0(raw):
     # body[1] bit0: power ON
     power = body[1] & 0x01
 
+    # ── New fields for X-08..X-12 ─────────────────────────────────────
+    # body[9] bit4: ECO (dudanov/midea-local consensus)
+    eco_bit4 = (body[9] >> 4) & 1 if len(body) > 9 else 0
+    # body[9] bit7: ECO (PI HVAC databridge / set-command interpretation)
+    eco_bit7 = (body[9] >> 7) & 1 if len(body) > 9 else 0
+    # body[10] bit0: sleep
+    sleep_bit0 = body[10] & 0x01 if len(body) > 10 else 0
+    # body[9] raw for in-loop sanity display
+    body9_raw = body[9] if len(body) > 9 else 0
+    # body[10] raw for in-loop sanity display
+    body10_raw = body[10] if len(body) > 10 else 0
+
     return {
         'mode_bits':      mode_bits,
         'set_temp':       set_temp,
@@ -296,6 +317,11 @@ def decode_rt_c0(raw):
         'outdoor_temp_c': outdoor_temp_c,
         'turbo':          turbo,
         'power':          power,
+        'eco_bit4':       eco_bit4,
+        'eco_bit7':       eco_bit7,
+        'sleep_bit0':     sleep_bit0,
+        'body9_raw':      body9_raw,
+        'body10_raw':     body10_raw,
     }
 
 
@@ -580,6 +606,93 @@ def run_validation(session_dirs):
             require_iter_steady=False,  # exploratory — don't filter
         )
         session_results.append(("X-07", "Run/Power", s, n, m, f_))
+
+        # ── Sanity check: re-validate X-01 (Mode) with raw bytes displayed ──
+        # This runs silently; if it disagrees with X-01, something is wrong.
+
+        # X-08a: ECO — XYE byte[20] bit0 vs R/T body[9] bit4
+        s, n, m, f_ = run_hypothesis(
+            "X-08a", f"ECO bit (XYE b20.0 vs RT b9.4) ({label})",
+            xye, rt,
+            lambda x: x['eco_sleep'],
+            lambda r: r['eco_bit4'],
+            compare_bool,
+        )
+        session_results.append(("X-08a", "ECO(b9.4)", s, n, m, f_))
+
+        # X-08b: ECO — XYE byte[20] bit0 vs R/T body[9] bit7 (PI HVAC interpretation)
+        s, n, m, f_ = run_hypothesis(
+            "X-08b", f"ECO bit (XYE b20.0 vs RT b9.7) ({label})",
+            xye, rt,
+            lambda x: x['eco_sleep'],
+            lambda r: r['eco_bit7'],
+            compare_bool,
+        )
+        session_results.append(("X-08b", "ECO(b9.7)", s, n, m, f_))
+
+        # X-08c: Sleep — XYE byte[20] bit0 vs R/T body[10] bit0
+        s, n, m, f_ = run_hypothesis(
+            "X-08c", f"Sleep bit (XYE b20.0 vs RT b10.0) ({label})",
+            xye, rt,
+            lambda x: x['eco_sleep'],
+            lambda r: r['sleep_bit0'],
+            compare_bool,
+        )
+        session_results.append(("X-08c", "Sleep(b10.0)", s, n, m, f_))
+
+        # X-09: Vertical Swing — XYE byte[20] bit2 vs R/T body[7] bits[3:2]
+        s, n, m, f_ = run_hypothesis(
+            "X-09", f"V-Swing (XYE b20.2 vs RT b7[3:2]) ({label})",
+            xye, rt,
+            lambda x: x['v_swing'],
+            lambda r: r['v_swing'],
+            compare_bool,
+        )
+        session_results.append(("X-09", "V-Swing", s, n, m, f_))
+
+        # X-10: Horizontal Swing — XYE D0 byte[11] vs R/T body[7] bits[1:0]
+        # Uses D0 frames as the XYE source (only place H-swing appears)
+        d0 = frames['xye_d0']
+        if d0 and rt:
+            # Map D0 swing to h_swing boolean: 0x20=H-swing on, else off
+            s, n, m, f_ = run_hypothesis(
+                "X-10", f"H-Swing (D0 b11 vs RT b7[1:0]) ({label})",
+                d0, rt,
+                lambda x: 1 if x['swing_raw'] == 0x20 else 0,
+                lambda r: r['h_swing'],
+                compare_bool,
+            )
+            session_results.append(("X-10", "H-Swing", s, n, m, f_))
+
+        # X-11: OP_FLAGS decomposition — report raw byte[21] distribution
+        # Not a cross-bus hypothesis but a per-session distribution report
+        op_flags_ctr = Counter(d['op_flags_raw'] for _, d in xye)
+        print(f"\n  X-11: OP_FLAGS byte[21] distribution ({label}):")
+        for val, cnt in sorted(op_flags_ctr.items(), key=lambda x: -x[1]):
+            bits = f"b7(lock)={val>>7&1} b2(pump)={val>>2&1} b1={val>>1&1} b0={val&1}"
+            print(f"    0x{val:02X} ({cnt}x) — {bits}")
+
+        # X-12: MODE_FLAGS decomposition — report raw byte[20] distribution
+        mode_flags_ctr = Counter(d['mode_flags_raw'] for _, d in xye)
+        print(f"\n  X-12: MODE_FLAGS byte[20] distribution ({label}):")
+        for val, cnt in sorted(mode_flags_ctr.items(), key=lambda x: -x[1]):
+            bits = (f"b0(eco/sleep)={val&1} b1(turbo)={val>>1&1} "
+                    f"b2(v-swing)={val>>2&1} b3={val>>3&1} "
+                    f"b4={val>>4&1} b5={val>>5&1} b6={val>>6&1} b7={val>>7&1}")
+            print(f"    0x{val:02X} ({cnt}x) — {bits}")
+
+        # ── In-loop sanity: validate known fields match ─────────────────
+        # Cross-check that XYE turbo (b20.1) still matches R/T (b10.1) — X-06 above
+        # If X-06 passes and X-08a/b/c fail, the new bits are genuinely different.
+        # Also report R/T body[9] and body[10] raw distributions for transparency.
+        rt_b9_ctr = Counter(d['body9_raw'] for _, d in rt)
+        rt_b10_ctr = Counter(d['body10_raw'] for _, d in rt)
+        print(f"\n  Sanity — R/T body[9] raw distribution ({label}):")
+        for val, cnt in sorted(rt_b9_ctr.items(), key=lambda x: -x[1])[:5]:
+            print(f"    0x{val:02X} ({cnt}x) — bit4(eco)={val>>4&1} bit7={val>>7&1}")
+        print(f"  Sanity — R/T body[10] raw distribution ({label}):")
+        for val, cnt in sorted(rt_b10_ctr.items(), key=lambda x: -x[1])[:5]:
+            print(f"    0x{val:02X} ({cnt}x) — bit0(sleep)={val&1} bit1(turbo)={val>>1&1}")
 
         all_results.append((label, session_results))
 

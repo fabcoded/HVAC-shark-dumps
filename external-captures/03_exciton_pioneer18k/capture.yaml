@@ -1,0 +1,59 @@
+# Midea XYE Capture: exciton — Pioneer 18K BTU Concealed Duct
+# Source: https://community.home-assistant.io/t/midea-branded-ac-s-with-esphome-no-cloud/265236
+# License: HA Community posts are CC BY-NC-SA 4.0
+# User: exciton
+# Date: 2024–2025
+#
+# Hardware:
+#   Indoor unit: Pioneer 18K BTU concealed duct (Midea OEM)
+#   Capture method: ESP8266 D1 Mini + TTL-RS485 adapter (auto flow control)
+#   Created first working ESPHome midea_xye component: github.com/exciton/esphome
+#
+# Protocol variant:
+#   to_master_flag: 0x80 (standard Codeberg)
+#   from_master_flag: 0x80
+#   temp_offset: 0x30 (assumed Codeberg standard)
+#   crc_variant: codeberg (full frame)
+#   current: always 0xFF (not available on this unit)
+#   T2B: returned 0xFF or incorrect values
+
+sessions:
+
+  # =========================================================================
+  # SESSION 1: First working XYE query/response
+  # =========================================================================
+  # First community-confirmed ESPHome XYE communication.
+  # ESP sending C0 queries with from_master=0x80 (Codeberg standard).
+  - session: first_working_xye
+    session_index: "01"
+    date: "2024-2025"
+    description: >
+      First working XYE communication via ESPHome. ESP sends standard
+      Codeberg-style C0 query. Unit responds with to_master=0x80.
+      Current always 0xFF. T2B unreliable. This established the baseline
+      that was later refined by mdrobnak.
+    context: { mode: off_or_idle, controller: ESP_only }
+
+    frames:
+      - raw: "AA:C0:00:00:80:00:00:00:00:00:00:00:00:3F:81:55"
+        dir: master_to_unit
+        description: "C0 query — Codeberg standard with from_master=0x80"
+        decode:
+          byte_04: { value: 0x80, meaning: "from_master_flag = 0x80 (Codeberg standard)" }
+          byte_14: { value: 0x81, meaning: "CRC (over full frame)" }
+
+      - raw: "AA:C0:80:00:00:00:30:10:00:80:1A:53:4E:FF:46:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:1B:55"
+        dir: unit_to_master
+        description: "C0 response — off, auto fan, setpoint 26°C"
+        decode:
+          byte_02: { value: 0x80, meaning: "to_master_flag = 0x80 (Codeberg standard)" }
+          byte_06: { value: 0x30, meaning: "capabilities_1" }
+          byte_07: { value: 0x10, meaning: "capabilities_2: has SWING" }
+          byte_08: { value: 0x00, meaning: "off" }
+          byte_09: { value: 0x80, meaning: "auto fan" }
+          byte_10: { value: 0x1A, meaning: "setpoint 26°C" }
+          byte_11: { value: 0x53, meaning: "T1 = (0x53-0x30)/2 = 17.5°C (Codeberg offset)" }
+          byte_12: { value: 0x4E, meaning: "T2A = (0x4E-0x30)/2 = 15°C" }
+          byte_13: { value: 0xFF, meaning: "T2B = n/a" }
+          byte_14: { value: 0x46, meaning: "T3 = (0x46-0x30)/2 = 11°C" }
+          byte_15: { value: 0xFF, meaning: "current = n/a (never available on this unit)" }

@@ -1,0 +1,417 @@
+# Midea XYE Capture: mdrobnak — Cooper & Hunter CH-36AHU
+# Source: https://community.home-assistant.io/t/midea-a-c-via-local-xye/857679
+# License: HA Community posts are CC BY-NC-SA 4.0
+# User: mdrobnak (Matthew Drobnak)
+# Date: March 2025
+#
+# Hardware:
+#   Indoor unit: Cooper & Hunter CH-36AHU (36K BTU ducted heat pump, Midea OEM)
+#   Wired controller: KJR-120X (HA/HB interface, speaks XYE internally)
+#   Capture method: ESP32 + TTL-RS485 adapter (auto flow control), ESPHome UART debug
+#   ESP connected to XYE terminals on indoor unit, snooping wired controller traffic
+#
+# Protocol variant discovered by mdrobnak:
+#   to_master_flag: 0x00 (NOT 0x80 — differs from Codeberg spec)
+#   from_master_flag: 0x00
+#   temp_offset: 0x28 (NOT 0x30 — validated against wired controller display)
+#   temp_unit: Celsius (switches to Fahrenheit if wired controller display set to °F)
+#   crc_range: bytes 1..N-2 (excl preamble, CRC byte, prologue)
+#   low_fan_byte: 0x04 (not 0x03 as in Codeberg)
+#   supports: C0, C3, C4, C6
+
+sessions:
+
+  # =========================================================================
+  # SESSION 1: Passive sniff — wired controller polling, heat mode
+  # =========================================================================
+  # ESP32 listening only. KJR-120X wired controller polls the indoor unit.
+  # Unit in heat mode, ~20°C room temperature, basement installation.
+  # Discovered that TO_CLIENT=0x00.
+  - session: passive_sniff_heat_mode
+    session_index: "01"
+    date: "2025-03-07"
+    description: >
+      Passive capture of KJR-120X polling the indoor unit in heat mode.
+      ESP32 was listening only, not sending. Room ~20°C, basement.
+      Key discovery: TO_CLIENT byte is 0x00, not 0x80.
+    context: { mode: heat, ambient_approx_c: 20, controller: KJR-120X, esp_role: passive }
+
+    frames:
+      - raw: "AA:C0:00:00:00:00:00:00:00:00:00:00:00:3F:01:55"
+        dir: master_to_unit
+        description: "C0 standard query from wired controller"
+        decode:
+          byte_01: { value: 0xC0, meaning: "query" }
+          byte_02: { value: 0x00, meaning: "destination unit 0" }
+          byte_04: { value: 0x00, meaning: "from_master_flag=0x00 (not 0x80!)" }
+          byte_13: { value: 0x3F, meaning: "command_check = 0xFF - 0xC0" }
+          byte_14: { value: 0x01, meaning: "CRC" }
+
+      - raw: "AA:C0:00:00:00:00:30:14:84:80:15:52:54:00:2E:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:1B:55"
+        dir: unit_to_master
+        description: "C0 response — heat mode, auto fan, 21°C setpoint"
+        decode:
+          byte_01: { value: 0xC0, meaning: "response to query" }
+          byte_02: { value: 0x00, meaning: "to_master_flag=0x00" }
+          byte_06: { value: 0x30, meaning: "capabilities_1" }
+          byte_07: { value: 0x14, meaning: "capabilities_2 — aux_heat_capable?" }
+          byte_08: { value: 0x84, meaning: "heat mode" }
+          byte_09: { value: 0x80, meaning: "auto fan, idle/starting" }
+          byte_10: { value: 0x15, meaning: "setpoint 21°C" }
+          byte_11: { value: 0x52, meaning: "T1 indoor return air = (0x52-0x28)/2 = 21°C" }
+          byte_12: { value: 0x54, meaning: "T2A coil midpoint = (0x54-0x28)/2 = 22°C" }
+          byte_13: { value: 0x00, meaning: "T2B coil outlet = n/a or 0" }
+          byte_14: { value: 0x2E, meaning: "T3 outdoor coil = (0x2E-0x28)/2 = 3°C" }
+          byte_15: { value: 0xFF, meaning: "current n/a" }
+          byte_27: { value: 0x14, meaning: "unknown, consistent on this unit" }
+          byte_28: { value: 0xE0, meaning: "startup_status_1 = normal operation" }
+          byte_29: { value: 0x01, meaning: "startup_status_2 = normal operation" }
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:00:00:00:00:3B:01:55"
+        dir: master_to_unit
+        description: "C4 extended query from wired controller"
+        decode:
+          byte_01: { value: 0xC4, meaning: "extended query" }
+          byte_13: { value: 0x3B, meaning: "command_check = 0xFF - 0xC4" }
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:30:98:00:00:00:01:20:84:80:CE:BC:D6:2C:00:00:FF:00:80:80:80:80:C4:55"
+        dir: unit_to_master
+        description: "C4 extended response — heat running, outdoor temp available"
+        decode:
+          byte_01: { value: 0xC4, meaning: "extended query response" }
+          byte_09: { value: 0x30, meaning: "ext_caps_1" }
+          byte_10: { value: 0x98, meaning: "ext_caps_2 — unit-specific" }
+          byte_14: { value: 0x01, meaning: "unknown flag" }
+          byte_15: { value: 0x20, meaning: "ext_mode_flags = normal operation" }
+          byte_16: { value: 0x84, meaning: "ext_oper_mode = heat (actual running mode)" }
+          byte_17: { value: 0x80, meaning: "ext_fan_status = auto" }
+          byte_18: { value: 0xCE, meaning: "ext_setpoint (encoding TBD)" }
+          byte_21: { value: 0x2C, meaning: "T4 outdoor ambient = (0x2C-0x28)/2 = 2°C" }
+          byte_24: { value: 0xFF, meaning: "ext_status = normal" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:00:02:15:00:39:EA:55"
+        dir: master_to_unit
+        description: "C6 follow-me UPDATE, reporting 21°C room temp"
+        decode:
+          byte_01: { value: 0xC6, meaning: "extended set" }
+          byte_10: { value: 0x02, meaning: "follow_me UPDATE" }
+          byte_11: { value: 0x15, meaning: "follow_me temp = 21°C (always Celsius)" }
+          byte_13: { value: 0x39, meaning: "command_check = 0xFF - 0xC6" }
+
+  # =========================================================================
+  # SESSION 2: Deduplicated frames — extended heat mode capture
+  # =========================================================================
+  # Longer capture with `sort | uniq -c`. 32 C0 pairs, 33 C4 pairs observed.
+  - session: heat_mode_unique_frames
+    session_index: "02"
+    date: "2025-03-07"
+    description: >
+      Deduplicated frames from extended heat mode capture. Unit running heat,
+      ~20°C room. Contains frames not seen in session 1 — off-mode response
+      and C4 with off/idle state.
+    context: { mode: heat, controller: KJR-120X }
+
+    frames:
+      - raw: "AA:C0:00:00:00:00:30:14:00:80:18:58:5E:00:26:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:94:55"
+        dir: unit_to_master
+        description: "C0 response — off mode, auto fan, setpoint 24°C"
+        decode:
+          byte_08: { value: 0x00, meaning: "off" }
+          byte_09: { value: 0x80, meaning: "auto fan" }
+          byte_10: { value: 0x18, meaning: "setpoint 24°C" }
+          byte_11: { value: 0x58, meaning: "T1 = (0x58-0x28)/2 = 24°C" }
+          byte_12: { value: 0x5E, meaning: "T2A = (0x5E-0x28)/2 = 27°C" }
+          byte_14: { value: 0x26, meaning: "T3 = (0x26-0x28)/2 = -1°C" }
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:30:98:00:00:00:00:20:04:80:D2:BC:D6:28:00:00:FF:00:80:80:80:80:44:55"
+        dir: unit_to_master
+        description: "C4 response — off/idle in extended frame"
+        decode:
+          byte_15: { value: 0x20, meaning: "ext_mode_flags = normal" }
+          byte_16: { value: 0x04, meaning: "ext_oper_mode = off (0x04, not 0x00)" }
+          byte_21: { value: 0x28, meaning: "T4 outdoor = (0x28-0x28)/2 = 0°C" }
+
+  # =========================================================================
+  # SESSION 3: Follow-Me activation sequence
+  # =========================================================================
+  # Exact sequence when Follow-Me is turned ON on KJR-120X.
+  # 3x C6 start (0x06), then periodic C6 update (0x02) every ~3 minutes.
+  - session: follow_me_activation
+    session_index: "03"
+    date: "2025-03-08"
+    description: >
+      Follow-Me activation from KJR-120X. Controller sends 3x C6 start
+      commands (byte 10=0x06), then switches to C6 update (byte 10=0x02)
+      every ~3 minutes. Temperature: 21°C. Heat mode active.
+    context: { mode: heat, follow_me: activating, follow_me_temp_c: 21 }
+
+    frames:
+      # --- 02:04 — C0 poll, then 3x Follow-Me START ---
+
+      - raw: "AA:C0:00:00:00:00:30:14:84:80:15:52:62:00:3C:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:FF:55"
+        dir: unit_to_master
+        description: "C0 response just before follow-me start — coil heating up"
+        decode:
+          byte_08: { value: 0x84, meaning: "heat" }
+          byte_12: { value: 0x62, meaning: "T2A = (0x62-0x28)/2 = 29°C — coil hot" }
+          byte_14: { value: 0x3C, meaning: "T3 = (0x3C-0x28)/2 = 10°C" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:00:06:15:00:39:E6:55"
+        dir: master_to_unit
+        description: "C6 follow-me START #1 — 21°C"
+        decode:
+          byte_08: { value: 0x00, meaning: "no special settings" }
+          byte_10: { value: 0x06, meaning: "follow_me START" }
+          byte_11: { value: 0x15, meaning: "21°C" }
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:30:98:00:00:00:00:20:84:80:CD:BC:D6:44:00:00:FF:00:80:80:80:80:AE:55"
+        dir: unit_to_master
+        description: "C4 response after first follow-me start"
+        decode:
+          byte_16: { value: 0x84, meaning: "heat running" }
+          byte_21: { value: 0x44, meaning: "T4 outdoor = (0x44-0x28)/2 = 14°C" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:00:06:15:00:39:E6:55"
+        dir: master_to_unit
+        description: "C6 follow-me START #2 (repeat)"
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:00:06:15:00:39:E6:55"
+        dir: master_to_unit
+        description: "C6 follow-me START #3 (repeat)"
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:30:98:00:00:00:00:20:84:80:CD:BC:D6:44:00:00:FF:00:80:80:80:80:AC:55"
+        dir: unit_to_master
+        description: "C6 response after 3rd start — same layout as C4"
+        decode:
+          byte_01: { value: 0xC6, meaning: "response to C6 (not C4!)" }
+          byte_16: { value: 0x84, meaning: "heat running" }
+          byte_30: { value: 0xAC, meaning: "CRC differs from C4 response (0xAE) due to byte 01" }
+
+      # --- 02:07 — periodic update ---
+
+      - raw: "AA:C6:00:00:00:00:00:00:00:00:02:15:00:39:EA:55"
+        dir: master_to_unit
+        description: "C6 follow-me UPDATE — 21°C, ~3 min after start"
+        decode:
+          byte_10: { value: 0x02, meaning: "follow_me UPDATE (no beep)" }
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:30:98:00:00:00:00:20:84:80:CD:BC:D6:44:00:00:FF:00:80:80:80:80:AE:55"
+        dir: unit_to_master
+        description: "C4 response after follow-me update — unchanged"
+
+  # =========================================================================
+  # SESSION 4: Emergency Heat (Aux-Only)
+  # =========================================================================
+  # C3 heat set, then C6 with byte 8=0x80 to flag emergency heat.
+  # C4 response byte 15 changes from 0x20 to 0x60.
+  - session: emergency_heat_activation
+    session_index: "04"
+    date: "2025-03-19"
+    description: >
+      Emergency Heat activated via KJR-120X. Wired controller sends C3 (heat),
+      then C6 with byte 8=0x80. C4 response byte 15 changes from 0x20 (normal)
+      to 0x60 (emergency heat). The 0x40 bit = emergency heat active.
+    context: { mode: emergency_heat, follow_me: active, follow_me_temp_c: 21 }
+
+    frames:
+      - raw: "AA:C3:00:00:00:00:84:80:CF:00:00:00:00:3C:2E:55"
+        dir: master_to_unit
+        description: "C3 set — heat mode, auto fan, high setpoint"
+        decode:
+          byte_06: { value: 0x84, meaning: "heat" }
+          byte_07: { value: 0x80, meaning: "auto fan" }
+          byte_08: { value: 0xCF, meaning: "setpoint 0xCF — likely °F range" }
+
+      - raw: "AA:C3:00:00:00:00:30:14:84:80:16:52:54:00:34:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:11:55"
+        dir: unit_to_master
+        description: "C3 response — confirms heat mode"
+        decode:
+          byte_08: { value: 0x84, meaning: "heat" }
+          byte_10: { value: 0x16, meaning: "setpoint 22°C (old value — C3 response returns previous state)" }
+
+      - raw: "AA:C6:00:00:00:00:00:00:80:00:06:15:00:39:66:55"
+        dir: master_to_unit
+        description: "C6 emergency heat + follow-me start"
+        decode:
+          byte_08: { value: 0x80, meaning: "EMERGENCY HEAT flag" }
+          byte_10: { value: 0x06, meaning: "follow_me START" }
+          byte_11: { value: 0x15, meaning: "21°C" }
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:30:98:00:00:00:01:60:84:80:CF:BC:D6:32:00:00:FF:00:80:80:80:80:7D:55"
+        dir: unit_to_master
+        description: "C4 response — emergency heat CONFIRMED"
+        decode:
+          byte_14: { value: 0x01, meaning: "unknown flag" }
+          byte_15: { value: 0x60, meaning: "0x20 (normal) + 0x40 (emergency heat) = 0x60" }
+          byte_16: { value: 0x84, meaning: "heat running" }
+          byte_21: { value: 0x32, meaning: "T4 outdoor = (0x32-0x28)/2 = 5°C" }
+
+  # =========================================================================
+  # SESSION 5: Celsius vs Fahrenheit setpoint
+  # =========================================================================
+  # Wired controller switched between °C and °F display.
+  # C3 setpoint byte: < 0x80 = Celsius, >= 0x80 = Fahrenheit.
+  - session: celsius_vs_fahrenheit
+    session_index: "05"
+    date: "2025-03-17"
+    description: >
+      KJR-120X display switched from °C to °F. In Celsius mode, C3 setpoint
+      moves in 1°C increments. In Fahrenheit mode, same byte position but values
+      >= 0x80, moves in 1°F increments. Sensor temps always stay in native encoding.
+      Discovery: if setpoint byte < 0x80 → Celsius, >= 0x80 → Fahrenheit.
+    context: { mode: heat, test: temp_unit_switch }
+
+    frames:
+      - raw: "AA:C3:00:00:00:00:84:01:56:00:00:00:00:3C:26:55"
+        dir: master_to_unit
+        description: "C3 set — Celsius range, high fan"
+        decode:
+          byte_06: { value: 0x84, meaning: "heat" }
+          byte_07: { value: 0x01, meaning: "high fan" }
+          byte_08: { value: 0x56, meaning: "setpoint in Celsius range (0x56=86?)" }
+
+      - raw: "AA:C3:00:00:00:00:84:01:57:00:00:00:00:3C:25:55"
+        dir: master_to_unit
+        description: "C3 set — Celsius +1"
+        decode:
+          byte_08: { value: 0x57, meaning: "setpoint incremented by 1" }
+
+      - raw: "AA:C3:00:00:00:00:84:01:58:00:00:00:00:3C:24:55"
+        dir: master_to_unit
+        description: "C3 set — Celsius +1"
+        decode:
+          byte_08: { value: 0x58, meaning: "setpoint incremented by 1" }
+
+      - raw: "AA:C3:00:00:00:00:84:01:CB:00:00:00:00:3C:B1:55"
+        dir: master_to_unit
+        description: "C3 set — Fahrenheit range (display switched to °F)"
+        decode:
+          byte_08: { value: 0xCB, meaning: "setpoint 0xCB = Fahrenheit range (>=0x80)" }
+
+  # =========================================================================
+  # SESSION 6: Power cycle — startup status bytes
+  # =========================================================================
+  # Circuit breaker off → on. Bytes 28-29 count up to 0xE0:0x01 (normal).
+  - session: power_cycle_startup
+    session_index: "06"
+    date: "2025-03-19"
+    description: >
+      Indoor unit power-cycled via circuit breaker. C0 response bytes 28-29
+      count up during hardware init: 0x00:0x00 → … → 0xE0:0x01 (normal).
+      All other fields stay constant (unit off, fan stopped, residual temps).
+      The count does not go up linearly — it jumps around.
+    context: { mode: "off (powering on)" }
+
+    frames:
+      - raw: "AA:C0:00:00:00:00:30:14:00:00:16:52:52:00:00:FF:00:00:00:00:00:00:00:00:00:00:00:14:00:00:2F:55"
+        dir: unit_to_master
+        description: "First response after power-on — T3 sensor not ready"
+        decode:
+          byte_08: { value: 0x00, meaning: "off" }
+          byte_14: { value: 0x00, meaning: "T3=0x00 — sensor not yet online" }
+          byte_28: { value: 0x00, meaning: "startup_status_1 = init" }
+          byte_29: { value: 0x00, meaning: "startup_status_2 = init" }
+
+      - raw: "AA:C0:00:00:00:00:30:14:00:00:16:52:52:00:34:FF:00:00:00:00:00:00:00:00:00:00:00:14:00:00:FB:55"
+        dir: unit_to_master
+        description: "T3 sensor comes online"
+        decode:
+          byte_14: { value: 0x34, meaning: "T3 = (0x34-0x28)/2 = 6°C — sensor now valid" }
+          byte_28: { value: 0x00, meaning: "still initializing" }
+
+      - raw: "AA:C0:00:00:00:00:30:14:00:00:16:52:52:00:34:FF:00:00:00:00:00:00:00:00:00:00:00:14:03:00:F8:55"
+        dir: unit_to_master
+        description: "Status counting — 0x03:0x00"
+        decode:
+          byte_28: { value: 0x03, meaning: "startup_status_1 climbing" }
+
+      - raw: "AA:C0:00:00:00:00:30:14:00:00:16:52:52:00:34:FF:00:00:00:00:00:00:00:00:00:00:00:14:03:01:F7:55"
+        dir: unit_to_master
+        description: "Status counting — 0x03:0x01"
+
+      - raw: "AA:C0:00:00:00:00:30:14:00:00:16:52:52:00:34:FF:00:00:00:00:00:00:00:00:00:00:00:14:05:02:F4:55"
+        dir: unit_to_master
+        description: "Status counting — 0x05:0x02"
+
+      - raw: "AA:C0:00:00:00:00:30:14:00:00:16:52:52:00:34:FF:00:00:00:00:00:00:00:00:00:00:00:14:12:00:E9:55"
+        dir: unit_to_master
+        description: "Status counting — 0x12:0x00 (jumps, not linear)"
+
+      - raw: "AA:C0:00:00:00:00:30:14:00:00:16:52:52:00:34:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:1A:55"
+        dir: unit_to_master
+        description: "Startup complete — 0xE0:0x01 = NORMAL OPERATION"
+        decode:
+          byte_28: { value: 0xE0, meaning: "startup_status_1 = normal" }
+          byte_29: { value: 0x01, meaning: "startup_status_2 = normal" }
+
+  # =========================================================================
+  # SESSION 7: Fan speed auto-flag analysis
+  # =========================================================================
+  # Fan byte 9: upper nibble 0x80 = auto enabled, lower = actual speed.
+  # Unit ramps fan down as it approaches target.
+  - session: fan_speed_analysis
+    session_index: "07"
+    date: "2025-03-18"
+    description: >
+      Discovered fan byte encoding: 0x84=auto+low, 0x82=auto+medium,
+      0x81=auto+high. Without auto: 0x04=low, 0x02=mid, 0x01=high.
+      The unit autonomously ramps fan speed down when approaching setpoint.
+    context: { mode: heat, test: fan_speed }
+
+    frames:
+      - raw: "AA:C0:00:00:00:00:30:14:84:80:15:52:54:00:2E:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:1B:55"
+        dir: unit_to_master
+        description: "Fan=0x80 — auto, idle or starting (lower nibble 0x00)"
+        decode:
+          byte_09: { value: 0x80, meaning: "auto_flag=1, speed=0 (stopped/idle)" }
+
+      - raw: "AA:C0:00:00:00:00:30:14:84:80:15:52:62:00:3C:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:FF:55"
+        dir: unit_to_master
+        description: "Fan=0x80 — auto, T2A=29°C (coil heating up, fan probably running)"
+        decode:
+          byte_09: { value: 0x80, meaning: "auto_flag=1, speed=0 (but coil is hot)" }
+          byte_12: { value: 0x62, meaning: "T2A = 29°C — coil is actively heating" }
+
+      - raw: "AA:C0:00:00:00:00:30:14:84:80:15:52:54:00:4E:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:FB:55"
+        dir: unit_to_master
+        description: "Fan=0x80 — auto, T3=0x4E (outdoor 19°C, warmer conditions)"
+        decode:
+          byte_14: { value: 0x4E, meaning: "T3 outdoor coil = (0x4E-0x28)/2 = 19°C" }
+
+  # =========================================================================
+  # SESSION 8: Raw bus burst (interleaved TX/RX)
+  # =========================================================================
+  # One continuous burst from ESPHome UART debug — shows the real polling pattern.
+  - session: raw_bus_burst
+    session_index: "08"
+    date: "2025-03-07"
+    description: >
+      Raw continuous bus capture showing the KJR-120X polling pattern.
+      C0 query → C0 response → C4 query → C4 response, repeating.
+      This is what you see on the wire when just listening.
+    context: { mode: heat, controller: KJR-120X, esp_role: passive }
+
+    frames:
+      - raw: "AA:C4:00:00:00:00:00:00:00:00:00:00:00:3B:01:55"
+        dir: master_to_unit
+        description: "C4 query"
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:30:98:00:00:00:01:20:84:80:CE:BC:D6:2C:00:00:FF:00:80:80:80:80:C4:55"
+        dir: unit_to_master
+        description: "C4 response"
+
+      - raw: "AA:C0:00:00:00:00:00:00:00:00:00:00:00:3F:01:55"
+        dir: master_to_unit
+        description: "C0 query"
+
+      - raw: "AA:C0:00:00:00:00:30:14:84:80:15:52:54:00:2E:FF:00:00:00:00:00:00:00:00:00:00:00:14:E0:01:1B:55"
+        dir: unit_to_master
+        description: "C0 response"
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:00:00:00:00:3B:01:55"
+        dir: master_to_unit
+        description: "C4 query (next cycle)"
+
+      - raw: "AA:C4:00:00:00:00:00:00:00:30:98:00:00:00:01:20:84:80:CE:BC:D6:2C:00:00:FF:00:80:80:80:80:C4:55"
+        dir: unit_to_master
+        description: "C4 response (next cycle)"
