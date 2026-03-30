@@ -58,6 +58,8 @@ IR remote B9 frames step through service menu pages:
 
 ### Phase 2 — Turbo + temperature sweep (t=103-200 s)
 
+After service menu exit, unit returned to normal mode at 25 C.
+
 | Time (s) | Action | Source | UART observation |
 |----------|--------|--------|------------------|
 | ~103     | Enable Turbo mode | App | body[8] bit 5=1, FT jumps to 90 Hz |
@@ -65,20 +67,22 @@ IR remote B9 frames step through service menu pages:
 | 115      | Set temp 26 C | App | Temp=26, body[10] Turbo reverts to no |
 | 116      | Set temp 27 C | App | |
 | 117      | Set temp 28 C | App | |
-| 169      | Disable display LED | App | Beep flag unclear |
+| 169      | Disable display LED in app | App | Beep flag unclear |
 | 169      | Set temp 29 C | App | "unit does not beep when setting 29deg now!" |
-| 201      | Enable display LED, set temp 28 C | App | |
+| 201      | Set display LED on again | App | Display goes on when setting temp back to 28 |
+| 201      | Set temp 28 C | App | |
 
 ### Phase 3 — Turbo toggle via wall controller (t=200-361 s)
 
 | Time (s) | Action | Source | UART observation |
 |----------|--------|--------|------------------|
-| ~200     | Disable Turbo | Wall ctrl | (R/T only, not on UART) |
-| 330      | Set temp 29 C, Turbo off confirmed | App | body[8] Turbo=no |
-| 336      | Set temp 28 C | App | |
-| ~340     | Enable Turbo via wall ctrl | Wall ctrl | (R/T only) |
-| ~350     | Disable Turbo in app | App | |
-| 361      | Set temp 25 C, LED off? | App | Beep: no |
+| ~200     | Disable Turbo on room controller | Wall ctrl | (R/T only, not on UART) |
+| 330      | Set temp 29 C | App | body[8] Turbo=no confirmed |
+| ~330     | Enable Turbo on room controller again | Wall ctrl | (R/T only) |
+| ~340     | Disable Turbo in app | App | "after unit started to blow very much" |
+| ~350     | LED went off again?? (somewhere during testing) | — | Uncertain when this happened |
+| ~355     | Set LED on, then set 28 C | App | |
+| 361      | Set temp 25 C | App | Beep: no |
 
 ### Phase 4 — Sleep mode (t=361-429 s)
 
@@ -86,17 +90,16 @@ IR remote B9 frames step through service menu pages:
 |----------|--------|--------|
 | ~361     | Click "Smart Sleep" in app | App |
 | ~400     | Exit sleep function | App |
-| ~410     | LED went out again? | — |
-| 429      | Enable something, set temp 24 C | App |
+| ~410     | LED went out again?! | — |
+| ~420     | Click enable, set temp to 24 C, restart app | App |
 
 ### Phase 5 — Frost protection (t=429-537 s)
 
 | Time (s) | Action | Source | UART observation |
 |----------|--------|--------|------------------|
-| 464      | Enable frost protection | App | body[21] bit 7 = 1 |
-| ~470     | Note: room controller does not recognize FP | Visual | |
-| ~480     | Used wall ctrl to exit FP | Wall ctrl | (R/T only) |
-| ~510     | Enable FP again via app | App | body[21] bit 7 = 1 |
+| 464      | Enable frost protection | App | body[21] bit 7 = 1. App shows FP, display too |
+| ~470     | Note: room controller does not recognize FP | Visual | Used wall ctrl to exit FP |
+| ~510     | Enable FP again via app | App | body[21] bit 7 = 1. Display shows it |
 | 537      | Disable FP via app | App | body[21] bit 7 = 0 |
 
 ### Phase 6 — Fan speed percentage testing (t=537-651 s)
@@ -120,18 +123,23 @@ IR remote B9 frames step through service menu pages:
 | 697      | Turn on unit | App | 1 (ON) |
 | 715      | Set temp 25 C | App | |
 
-### Phase 8 — Window contact / MFB-X (t=836-895 s)
+### Phase 8 — Window contact / MFB-X (t=755-895 s)
+
+The window contact is a dry contact on the MFB-X HAHB adapter board.
 
 | Time (s) | Action | Source | Observation |
 |----------|--------|--------|-------------|
-| ~836     | Remove window contact on MFB-X | Manual | HVAC display shows "CP", room controller shows "CP" |
-| ~850     | Close contact | Manual | Return to normal operation |
-| ~860     | Open contact again | Manual | App says "just off" |
-| ~870     | Send ON via app | App | Nothing happens, just beep on HVAC |
-| 895      | Close contact, set 24 C | App | App: outside 4.1 C, inside 26 C |
+| ~755     | Remove window contact on MFB-X | Manual | HVAC display shows "CP", room controller shows "CP" |
+| ~771     | Close contact | Manual | Return to normal operation |
+| ~815     | Open contact again | Manual | App just says "off" |
+| ~836     | Send ON via app | App | Nothing happens, just a beep on the HVAC |
+| ~864     | Close contact | Manual | Return to normal operation |
+| 895      | Set temp 24 C | App | App: outside 4.1 C, inside 26 C |
 
-Note: CP error not visible in R/T 0xC0 error code field — carried elsewhere.
-The window contact is a dry contact on the MFB-X HAHB adapter board.
+End of session.
+
+Note: CP error not visible in R/T 0xC0 error code field — carried in 0x93
+extension board frame (body[1] bit 5, body[3]=0x04). See findings.md §7.
 
 ---
 

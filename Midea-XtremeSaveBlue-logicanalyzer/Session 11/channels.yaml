@@ -6,35 +6,35 @@
 channels:
 
   - name: "mainboardGrey"
-    csv: "Session 10.csv"
+    csv: "Session 11.csv"
     comment: "CN1grey wire - to mainboard - rxd pin"
     connectedComponents: "ACdisplay-ACmainboard"
     busType: "disp-mainboard_1"
     direction: "toACmainboard"
 
   - name: "mainboardBlue"
-    csv: "Session 10.csv"
+    csv: "Session 11.csv"
     comment: "CN1 blue wire - to mainboard - txd pin"
     connectedComponents: "ACdisplay-ACmainboard"
     busType: "disp-mainboard_1"
     direction: "fromACmainboard"
 
   - name: "wifiBrown"
-    csv: "Session 10.csv"
+    csv: "Session 11.csv"
     comment: "CN3 brown wire — rx wifi module"
     connectedComponents: "wifidongle-ACdisplay"
     busType: "uart"
     direction: "toACdisplay"
 
   - name: "wifiOrange"
-    csv: "Session 10.csv"
+    csv: "Session 11.csv"
     comment: "orange wire — tx wifi module"
     connectedComponents: "wifidongle-ACdisplay"
     busType: "uart"
     direction: "fromACdisplay"
 
   - name: "bidirectionalExtensionBoard"
-    csv: "Session 10.csv"       # pre-decoded Saleae Logic export — this is the input
+    csv: "Session 11.csv"       # pre-decoded Saleae Logic export — this is the input
     comment: "CN1 extension board bidirectional bus - r/t pin"
     connectedComponents: "ACdisplay-busadapter_HAHB"
 
@@ -43,7 +43,7 @@ channels:
 
 
   - name: "Channel 6"
-    csv: Session 10.hahb.raw.csv
+    csv: Session 11.hahb.raw.csv
     comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip"
     connectedComponents: "busadapter_HAHB-roomcontroller"
 
@@ -53,7 +53,7 @@ channels:
     subtract: true
 
   - name: "Channel 7"
-    csv: Session 10.hahb.raw.csv
+    csv: Session 11.hahb.raw.csv
     comment: "Raw HAHB bus data from adapter board, directly on RS485 transceiver chip. Data on this channel are MFB-X to diplay packets"
     connectedComponents: "busadapter_HAHB-roomcontroller"
 
@@ -62,7 +62,7 @@ channels:
     direction: "fromACbusadapter_HAHB"  # direct capture: MFB-X to display
 
   - name: "MideaIR"
-    csv: "Session 10.ir.raw.csv"
+    csv: "Session 11.ir.raw.csv"
     comment: "Raw IR signal from Midea remote control"
     connectedComponents: "IRremote-ACdisplay"
     busType: "ir_raw"
