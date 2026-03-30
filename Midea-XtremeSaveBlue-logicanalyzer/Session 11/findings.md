@@ -182,15 +182,53 @@ was confirmed visible on both the HVAC unit display AND the KJR-120M room
 controller display. The window contact is a dry contact on the MFB-X HAHB
 adapter board. When the contact opens, the unit enters a protection state.
 
-However, **R/T 0xC0 body[16] (Error Code) remains "none" throughout the entire
-session** — the CP error is not carried in the standard error code field. The error
-may be signaled via:
-- The 0x93 extension board status frame (R/T bus)
-- A separate error/notification frame on the XYE/HAHB bus
-- The disp-mainboard internal bus
+**R/T 0xC0 body[16] (Error Code) remains "none" throughout** — the CP error is not
+carried in the standard 0xC0 error code field.
 
-Further investigation needed — the CP error was confirmed visible on both displays
-but its protocol-level encoding location is unknown.
+The CP state IS carried on three other buses:
+
+#### R/T 0x93 Extension Board — primary signal carrier
+
+The MFB-X bus adapter detects the dry contact opening and signals via the 0x93
+frame. Two complete open/close cycles were captured:
+
+| Time (s) | 0x93 req body[1] | 0x93 rsp body[1] | 0x93 rsp body[3] | State |
+|----------|-----------------|-----------------|-----------------|-------|
+| 703.0    | 0x00            | 0x00            | 0x84            | Normal (running) |
+| 755.0    | **0xA0**        | —               | —               | Initial trigger (bit 7+bit 5) |
+| 755.2    | —               | **0x20**        | **0x04**        | CP protection triggered |
+| 757.0    | 0x20            | 0x20            | 0x00            | Shutdown complete |
+| 770.8    | 0x80            | 0x00            | **0x80**        | Recovery (contact closes) |
+| 772.4    | 0x00            | 0x00            | 0x84            | Normal |
+| 814.5    | **0xA0**        | —               | —               | 2nd contact open trigger |
+| 814.6    | —               | **0x20**        | **0x04**        | 2nd CP protection |
+| 816.3    | 0x20            | 0x20            | 0x00            | 2nd shutdown |
+| 864.2    | 0x80            | 0x00            | **0x80**        | 2nd recovery |
+| 865.8    | 0x00            | 0x00            | 0x84            | Normal |
+
+**0x93 request body[1]**: bit 5 (0x20) = window contact open state. bit 7 (0x80) =
+periodic alternating flag (all sessions). 0xA0 = both bits = initial trigger.
+
+**0x93 response body[3]**: 0x84=running, 0x04=CP protection, 0x00=off, 0x80=recovery.
+
+#### XYE C0 32-byte response — secondary indicator
+
+**byte[21] bit 3 (0x08)** = protection flag. Set on contact open, cleared on close.
+**byte[8]** (mode): 0x84→0x00 (shutdown), 0x80→0x84 (recovery).
+
+#### Disp-mainboard internal bus
+
+**0x20 Grey byte[9]**: 0x40→0x00 (bit 6 clears on contact open).
+**0x30 frame**: 64-byte operational frame collapses to 10-byte short frame
+(`AA300A00FF0300004282`) — shutdown/protection notification.
+
+#### Propagation order
+
+0x93 request (bus adapter, t=755.0) → 0x93 response (display, t=755.2) →
+R/T 0xC0 + XYE C0 (t=755.9) → disp-mb (t=756-757).
+
+See `../../HVAC-shark/protocol-analysis/midea/analysis_0x93_extension_board.md`
+for the full cross-session 0x93 frame analysis.
 
 ---
 
@@ -218,3 +256,7 @@ Confirms the Session 10 dual-encoding dissector works correctly in Celsius-only 
 | XYE C4/C6 T4 (raw-40)/2 | Hypothesis | **Confirmed S11** |
 | Frost protection body[21] bit 7 | Documented | **Confirmed S11** |
 | IR B9 parameter semantics | Unknown | **Confirmed S11** (0x01-0x07 mapped to T1-FR) |
+| 0x93 req body[1] bit 5 | Unknown (OQ-09) | **Consistent S11** — window contact open flag |
+| 0x93 rsp body[3] | Unknown (OQ-09) | **Consistent S11** — operational state (0x84=run, 0x04=CP, 0x00=off, 0x80=recovery) |
+| 0x93 req body[4] | Unknown (OQ-09) | **Hypothesis** — 0x05 when Follow Me active (S10/S11), 0x00 otherwise |
+| XYE C0 byte[21] bit 3 | Unknown | **Consistent S11** — protection flag (0x08 on contact open) |
