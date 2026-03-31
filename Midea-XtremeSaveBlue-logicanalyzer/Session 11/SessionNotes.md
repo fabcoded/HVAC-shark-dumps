@@ -23,6 +23,9 @@ ground truth sensor values.
 Same channel configuration as Session 10 including IR.
 See [channels.yaml](channels.yaml).
 
+**HAHB address**: MFB-X rotary switch at position 5 (same as Session 10).
+XYE bus address 0x05.
+
 ---
 
 ## Initial state

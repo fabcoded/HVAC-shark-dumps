@@ -10,6 +10,7 @@ IR button presses.
 
 - **Unit**: Midea XtremeSaveBlue split A/C (test object)
 - **Capture point**: Same bus setup as Sessions 10-12
+- **HAHB address**: MFB-X rotary switch at position 5 (XYE bus address 0x05)
 - **Logic analyser**: Saleae
 - **Wi-Fi dongle**: CONNECTED (passive — no app commands sent)
 - **Wired controller**: KJR-120M

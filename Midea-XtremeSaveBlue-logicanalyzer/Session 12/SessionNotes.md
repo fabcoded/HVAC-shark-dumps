@@ -10,6 +10,7 @@ Follow Me. All Celsius. Includes IR remote for temperature and swing.
 
 - **Unit**: Midea XtremeSaveBlue split A/C (test object)
 - **Capture point**: Same bus setup as Sessions 10-11 — all buses + IR
+- **HAHB address**: MFB-X rotary switch at position 5 (XYE bus address 0x05)
 - **Logic analyser**: Saleae
 - **Wi-Fi dongle**: CONNECTED, paired with app
 - **Wired controller**: KJR-120M

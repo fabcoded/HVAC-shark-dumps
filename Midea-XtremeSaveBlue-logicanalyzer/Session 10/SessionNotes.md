@@ -25,8 +25,13 @@ IR remote (which is always Celsius) switches everything back.
 
 ## Probe setup
 
-Same channel configuration as Sessions 7–9 plus IR channel.
+Same channel configuration as Sessions 7-9 plus IR channel.
 See [channels.yaml](channels.yaml).
+
+**HAHB address change**: Starting with this session, the MFB-X adapter board
+rotary switch was set to **position 5** (was position 0 in Sessions 1-9).
+XYE bus address is now 0x05: C0/C3/C6 commands target dest=0x05, responses
+show src/masterID=0x05. D0 broadcast addresses unchanged (src=0x01, dest=0x20).
 
 ---
 
