@@ -11,9 +11,9 @@ main project:
 **[HVAC-shark](https://github.com/fabcoded/HVAC-shark)**
 
 Contents of HVAC-shark relevant to this repository:
-- **Wireshark Lua dissector** (`wireshark_dissectors/`) — load this to decode `.pcap` files from this repo
-- **ESP32 / Python live-capture dongle** (`dongle/mid-xye/`) — for live capture over UDP
-- **Protocol reference documents** (`protocol-analysis/`) — field-level documentation for all captured buses
+- **Wireshark Lua dissector** (`tools/dissector/`) — load this to decode `.pcap` files from this repo
+- **ESP32 / Python live-capture dongle** (`tools/dongle/mid-xye/`) — for live capture over UDP
+- **Protocol documentation** (`protocols/`) — spec, devices, comparison, analysis per manufacturer
 - **`AGENTS.md`** — instructions for AI agents working across both repositories
 
 The offline pcap converter that processes the raw Saleae exports in this repository:
